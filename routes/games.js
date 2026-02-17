@@ -17,7 +17,7 @@ router.post('/games', (req, res) => {
   }
 });
 
-// POST /api/games/:id/moves — Add a move
+// POST /api/games/:id/moves — Add a move (idempotent)
 router.post('/games/:id/moves', (req, res) => {
   try {
     const gameId = parseInt(req.params.id, 10);
@@ -27,8 +27,8 @@ router.post('/games/:id/moves', (req, res) => {
     if (san === undefined || fen === undefined) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    db.addMove(gameId, { ply, san, fen, timestamp, side });
-    res.status(204).end();
+    const inserted = db.addMove(gameId, { ply, san, fen, timestamp, side });
+    res.status(inserted ? 204 : 409).end();
   } catch (e) {
     console.error('POST /games/:id/moves error:', e.message);
     res.status(500).json({ error: e.message });

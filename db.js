@@ -37,11 +37,27 @@ function initDb() {
       san       TEXT NOT NULL,
       fen       TEXT NOT NULL,
       timestamp INTEGER NOT NULL,
-      side      TEXT NOT NULL
+      side      TEXT NOT NULL,
+      UNIQUE(game_id, ply)
     );
 
     CREATE INDEX IF NOT EXISTS idx_moves_game_id ON moves(game_id);
   `);
+
+  // Migration: deduplicate existing moves and add unique constraint
+  // The UNIQUE constraint in CREATE TABLE only applies if the table is new.
+  // For existing tables, we need to create the index explicitly.
+  try {
+    // Remove duplicate moves keeping the one with the lowest rowid
+    db.exec(`
+      DELETE FROM moves WHERE id NOT IN (
+        SELECT MIN(id) FROM moves GROUP BY game_id, ply
+      )
+    `);
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_moves_game_ply ON moves(game_id, ply)`);
+  } catch (e) {
+    // Index may already exist; ignore
+  }
 
   return db;
 }
@@ -75,10 +91,11 @@ function createGame(metadata) {
 
 function addMove(gameId, moveData) {
   const stmt = db.prepare(`
-    INSERT INTO moves (game_id, ply, san, fen, timestamp, side)
+    INSERT OR IGNORE INTO moves (game_id, ply, san, fen, timestamp, side)
     VALUES (?, ?, ?, ?, ?, ?)
   `);
-  stmt.run(gameId, moveData.ply, moveData.san, moveData.fen, moveData.timestamp, moveData.side);
+  const info = stmt.run(gameId, moveData.ply, moveData.san, moveData.fen, moveData.timestamp, moveData.side);
+  return info.changes > 0; // false if duplicate (game_id, ply)
 }
 
 function endGame(gameId, result, resultReason) {
