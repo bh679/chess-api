@@ -1,6 +1,6 @@
 # Chess API
 
-REST API server for persistent chess game storage. Stores games and moves in a SQLite database, replacing the browser-side IndexedDB approach.
+REST API server for persistent chess game storage. Stores games and moves in a SQLite database. The client uses a local-first architecture where localStorage is the source of truth, with this server as the sync target. Move insertion is idempotent (`INSERT OR IGNORE` with a UNIQUE constraint on `game_id, ply`) to support safe retry and partial sync recovery.
 
 **Client repository:** [bh679/Chess](https://github.com/bh679/Chess) (also mirrored at [bh679/Narrative-Chess](https://github.com/bh679/Narrative-Chess))
 
@@ -61,7 +61,7 @@ sudo /opt/bitnami/ctlscript.sh restart apache
 |--------|------|-------------|
 | GET | `/api/health` | Health check — returns `{status, version}` |
 | POST | `/api/games` | Create a new game |
-| POST | `/api/games/:id/moves` | Add a move to a game |
+| POST | `/api/games/:id/moves` | Add a move (idempotent — returns 204 new, 409 duplicate) |
 | PATCH | `/api/games/:id/end` | Mark a game as finished |
 | PATCH | `/api/games/:id/player` | Update a player's name |
 | GET | `/api/games/:id` | Get full game with all moves |
@@ -74,7 +74,7 @@ SQLite database stored at `data/chess.db` (auto-created on first run). Uses WAL 
 
 **Tables:**
 - `games` — game metadata (players, result, time control, timestamps)
-- `moves` — individual moves (FEN, SAN, timestamps), foreign key to games with CASCADE delete
+- `moves` — individual moves (FEN, SAN, timestamps), foreign key to games with CASCADE delete, UNIQUE constraint on `(game_id, ply)` for idempotent sync
 
 ## Project Structure
 
