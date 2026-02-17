@@ -102,6 +102,18 @@ router.post('/games/list', (req, res) => {
   }
 });
 
+// POST /api/games/list-all — List all games (public)
+router.post('/games/list-all', (req, res) => {
+  try {
+    const { limit = 15, offset = 0 } = req.body || {};
+    const result = db.listAllGames(limit, offset);
+    res.json(result);
+  } catch (e) {
+    console.error('POST /games/list-all error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // DELETE /api/games/:id — Delete a game
 router.delete('/games/:id', (req, res) => {
   try {

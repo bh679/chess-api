@@ -155,6 +155,36 @@ function listGames(ids, limit = 15, offset = 0) {
   return { games, total };
 }
 
+function listAllGames(limit = 15, offset = 0) {
+  const { total } = db.prepare(`
+    SELECT COUNT(*) as total FROM games g
+    WHERE (SELECT COUNT(*) FROM moves m WHERE m.game_id = g.id) >= 1
+  `).get();
+
+  const rows = db.prepare(`
+    SELECT g.*, (SELECT COUNT(*) FROM moves m WHERE m.game_id = g.id) as move_count
+    FROM games g
+    WHERE (SELECT COUNT(*) FROM moves m WHERE m.game_id = g.id) >= 1
+    ORDER BY g.start_time DESC
+    LIMIT ? OFFSET ?
+  `).all(limit, offset);
+
+  const games = rows.map(row => ({
+    id: row.id,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    gameType: row.game_type,
+    timeControl: row.time_control,
+    white: { name: row.white_name, isAI: !!row.white_is_ai, elo: row.white_elo },
+    black: { name: row.black_name, isAI: !!row.black_is_ai, elo: row.black_elo },
+    result: row.result,
+    resultReason: row.result_reason,
+    moveCount: row.move_count
+  }));
+
+  return { games, total };
+}
+
 function deleteGame(gameId) {
   db.prepare('DELETE FROM games WHERE id = ?').run(gameId);
 }
@@ -168,5 +198,6 @@ module.exports = {
   updatePlayerName,
   getGame,
   listGames,
+  listAllGames,
   deleteGame
 };
