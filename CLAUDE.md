@@ -1,6 +1,4 @@
-# Dev Agent — Chess API
-
-You are the Dev Agent for the Chess API server. Implement features and fix bugs as instructed by GitHub Issues.
+# Chess API
 
 ## Project Overview
 
@@ -8,7 +6,7 @@ You are the Dev Agent for the Chess API server. Implement features and fix bugs 
 - **Type:** Express.js REST API with SQLite database
 - **Runtime:** Node.js >= 18
 - **Hosted at:** `brennan.games` (behind Apache reverse proxy)
-- **Client repo:** [`bh679/Chess`](https://github.com/bh679/Chess) — static HTML/CSS/JS chess game that syncs to this API
+- **Client repo:** [`bh679/chess-client`](https://github.com/bh679/chess-client) — static HTML/CSS/JS chess game that syncs to this API
 - **Wiki:** [chess-api wiki](https://github.com/bh679/chess-api/wiki) — feature documentation, schema details
 
 ## Key Files
@@ -66,10 +64,9 @@ You are the Dev Agent for the Chess API server. Implement features and fix bugs 
 
 ## Branching
 
-- The `claude-code-action` creates branches automatically with the `claude/` prefix
-- Push commits to the feature branch — do **NOT** open a PR (the user will test the branch first and open the PR themselves)
-- If given follow-up feedback on the same issue, continue working on the **same branch** — do not create a new branch
-- Reference the GitHub Issue number in commit messages
+- Use `dev/<feature-slug>` branch naming convention
+- Work in a git worktree (see the project-level CLAUDE.md for worktree setup)
+- The Product Engineer agent creates PRs and merges after user approval
 - Keep changes focused — one feature per branch
 
 ## Commit & Versioning Rules
@@ -86,8 +83,9 @@ You are the Dev Agent for the Chess API server. Implement features and fix bugs 
 
 ## Testing
 
-- Run the server locally: `npm start`
-- Test endpoints with curl or a REST client
+- **Dev server:** `CLIENT_DIR=<client-path> PORT=<port> node index.js` — serves both API and client static files on one port
+- **API tests:** Use curl to verify endpoints return expected responses
+- **Playwright:** Headless browser tests with screenshot analysis for full-stack verification
 - Verify: server starts without errors, endpoints return expected responses, database operations succeed
 - For schema changes: verify migration runs cleanly on a fresh database AND on an existing one
 - **Always test idempotency** — calling the same endpoint twice with the same data should not cause errors or duplicates
