@@ -30,6 +30,17 @@ npm install
 node index.js
 ```
 
+### Run as dev server (serves client static files)
+
+When the `CLIENT_DIR` environment variable is set, the server also serves static files from that directory. This lets you run both the API and client on a single port during development:
+
+```bash
+CLIENT_DIR=../chess-client PORT=3001 node index.js
+```
+
+- `http://localhost:3001/` — serves the chess-client UI
+- `http://localhost:3001/api/*` — serves the API endpoints
+
 ### Run with pm2 (recommended for production)
 
 ```bash
@@ -40,7 +51,7 @@ pm2 startup  # follow printed instructions to enable on boot
 
 ### Apache proxy
 
-The API listens on `127.0.0.1:3002` (not publicly exposed). Apache proxies `/api/*` requests to it. Add to your Apache SSL config:
+The API listens on `127.0.0.1:3002` by default (not publicly exposed). Override the port with the `PORT` environment variable. Apache proxies `/api/*` requests to it. Add to your Apache SSL config:
 
 ```apache
 ProxyRequests Off
@@ -66,6 +77,7 @@ sudo /opt/bitnami/ctlscript.sh restart apache
 | PATCH | `/api/games/:id/player` | Update a player's name |
 | GET | `/api/games/:id` | Get full game with all moves |
 | POST | `/api/games/list` | List games by IDs (body: `{ids, limit, offset}`) |
+| POST | `/api/games/list-all` | List all games with at least 1 move (body: `{limit, offset}`) |
 | DELETE | `/api/games/:id` | Delete a game and its moves |
 
 ## Database
