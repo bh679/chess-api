@@ -44,6 +44,14 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_moves_game_id ON moves(game_id);
   `);
 
+  // Migration: add engine columns for AI engine selection
+  try {
+    db.exec(`ALTER TABLE games ADD COLUMN white_engine TEXT`);
+  } catch (e) { /* column already exists */ }
+  try {
+    db.exec(`ALTER TABLE games ADD COLUMN black_engine TEXT`);
+  } catch (e) { /* column already exists */ }
+
   // Migration: deduplicate existing moves and add unique constraint
   // The UNIQUE constraint in CREATE TABLE only applies if the table is new.
   // For existing tables, we need to create the index explicitly.
@@ -71,8 +79,9 @@ function getDb() {
 function createGame(metadata) {
   const stmt = db.prepare(`
     INSERT INTO games (start_time, game_type, time_control, starting_fen,
-      white_name, white_is_ai, white_elo, black_name, black_is_ai, black_elo)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      white_name, white_is_ai, white_elo, white_engine,
+      black_name, black_is_ai, black_elo, black_engine)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const info = stmt.run(
     Date.now(),
@@ -82,9 +91,11 @@ function createGame(metadata) {
     metadata.white.name,
     metadata.white.isAI ? 1 : 0,
     metadata.white.elo ?? null,
+    metadata.white.engineId ?? null,
     metadata.black.name,
     metadata.black.isAI ? 1 : 0,
-    metadata.black.elo ?? null
+    metadata.black.elo ?? null,
+    metadata.black.engineId ?? null
   );
   return info.lastInsertRowid;
 }
@@ -126,8 +137,8 @@ function getGame(gameId) {
     startingFen: game.starting_fen,
     result: game.result,
     resultReason: game.result_reason,
-    white: { name: game.white_name, isAI: !!game.white_is_ai, elo: game.white_elo },
-    black: { name: game.black_name, isAI: !!game.black_is_ai, elo: game.black_elo },
+    white: { name: game.white_name, isAI: !!game.white_is_ai, elo: game.white_elo, engineId: game.white_engine },
+    black: { name: game.black_name, isAI: !!game.black_is_ai, elo: game.black_elo, engineId: game.black_engine },
     moves
   };
 }
@@ -162,8 +173,8 @@ function listGames(ids, limit = 15, offset = 0) {
     endTime: row.end_time,
     gameType: row.game_type,
     timeControl: row.time_control,
-    white: { name: row.white_name, isAI: !!row.white_is_ai, elo: row.white_elo },
-    black: { name: row.black_name, isAI: !!row.black_is_ai, elo: row.black_elo },
+    white: { name: row.white_name, isAI: !!row.white_is_ai, elo: row.white_elo, engineId: row.white_engine },
+    black: { name: row.black_name, isAI: !!row.black_is_ai, elo: row.black_elo, engineId: row.black_engine },
     result: row.result,
     resultReason: row.result_reason,
     moveCount: row.move_count
@@ -192,8 +203,8 @@ function listAllGames(limit = 15, offset = 0) {
     endTime: row.end_time,
     gameType: row.game_type,
     timeControl: row.time_control,
-    white: { name: row.white_name, isAI: !!row.white_is_ai, elo: row.white_elo },
-    black: { name: row.black_name, isAI: !!row.black_is_ai, elo: row.black_elo },
+    white: { name: row.white_name, isAI: !!row.white_is_ai, elo: row.white_elo, engineId: row.white_engine },
+    black: { name: row.black_name, isAI: !!row.black_is_ai, elo: row.black_elo, engineId: row.black_engine },
     result: row.result,
     resultReason: row.result_reason,
     moveCount: row.move_count

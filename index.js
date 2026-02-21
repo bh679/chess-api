@@ -8,6 +8,14 @@ const { version } = require('./package.json');
 initDb();
 
 const app = express();
+
+// Enable SharedArrayBuffer for multi-threaded WASM engines (Fairy-Stockfish)
+app.use((req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
+
 app.use(express.json());
 
 // Dev mode: serve chess-client static files when CLIENT_DIR is set
