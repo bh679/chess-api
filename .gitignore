@@ -1,2 +1,6 @@
 node_modules/
 data/
+
+# Test screenshots
+screenshots/
+test-results/
