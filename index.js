@@ -31,6 +31,16 @@ app.get('/api/health', (req, res) => {
 // Game routes
 app.use('/api', gamesRouter);
 
+// SPA catch-all: serve index.html for non-API, non-static paths
+// This allows path-based URLs (/replay, /games) to load the app,
+// which then redirects to the hash equivalent (/#/replay, /#/games)
+if (process.env.CLIENT_DIR) {
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.resolve(process.env.CLIENT_DIR, 'index.html'));
+  });
+}
+
 // Error handling
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
