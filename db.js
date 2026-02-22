@@ -525,13 +525,13 @@ function listGamesByUser(userId, { limit = 15, offset = 0, category, result, opp
   const params = [userId, userId];
 
   if (result === 'win') {
-    where += ` AND ((g.white_user_id = ? AND g.result = 'white') OR (g.black_user_id = ? AND g.result = 'black'))`;
+    where += ` AND ((g.white_user_id = ? AND g.result IN ('white', '1-0')) OR (g.black_user_id = ? AND g.result IN ('black', '0-1')))`;
     params.push(userId, userId);
   } else if (result === 'loss') {
-    where += ` AND ((g.white_user_id = ? AND g.result = 'black') OR (g.black_user_id = ? AND g.result = 'white'))`;
+    where += ` AND ((g.white_user_id = ? AND g.result IN ('black', '0-1')) OR (g.black_user_id = ? AND g.result IN ('white', '1-0')))`;
     params.push(userId, userId);
   } else if (result === 'draw') {
-    where += ` AND g.result = 'draw'`;
+    where += ` AND g.result IN ('draw', '1/2-1/2')`;
   } else if (result === 'abandoned') {
     where += ` AND g.result = 'abandoned'`;
   }
