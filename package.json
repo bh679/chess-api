@@ -1,6 +1,6 @@
 {
   "name": "chess-api",
-  "version": "1.02.0000",
+  "version": "1.02.0002",
   "private": true,
   "description": "REST API for chess game storage",
   "scripts": {
@@ -8,6 +8,8 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0",
-    "express": "^4.21.0"
+    "chess.js": "^1.0.0",
+    "express": "^4.21.0",
+    "ws": "^8.18.0"
   }
 }
