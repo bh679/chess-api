@@ -164,6 +164,11 @@ function initDb() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_games_white_user ON games(white_user_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_games_black_user ON games(black_user_id)`);
 
+  // Migration: add password_hash for local auth
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN password_hash TEXT`);
+  } catch (e) { /* column already exists */ }
+
   return db;
 }
 
@@ -567,6 +572,24 @@ function claimGame(gameId, side, userId) {
   return true;
 }
 
+/** Create a local user (no WP). Uses negative wp_user_id as placeholder. */
+function createLocalUser(username, displayName, passwordHash) {
+  const now = Date.now();
+  // Use a unique negative number for wp_user_id (local-only users)
+  const minRow = db.prepare('SELECT MIN(wp_user_id) AS m FROM users').get();
+  const wpId = Math.min((minRow.m || 0) - 1, -1);
+  db.prepare(`
+    INSERT INTO users (wp_user_id, username, display_name, password_hash, created_at, last_seen_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(wpId, username, displayName, passwordHash, now, now);
+  return db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+}
+
+/** Get user by username including password_hash (for local auth). */
+function getUserWithPassword(username) {
+  return db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+}
+
 module.exports = {
   initDb,
   getDb,
@@ -585,6 +608,8 @@ module.exports = {
   getUserById,
   updateUser,
   formatUser,
+  createLocalUser,
+  getUserWithPassword,
   // Rating helpers
   getRatings,
   ensureRating,

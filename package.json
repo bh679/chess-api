@@ -1,12 +1,13 @@
 {
   "name": "chess-api",
-  "version": "1.02.0003",
+  "version": "1.02.0004",
   "private": true,
   "description": "REST API for chess game storage",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.0.0",
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.3"
