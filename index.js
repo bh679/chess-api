@@ -1,3 +1,4 @@
+const http = require('http');
 const express = require('express');
 const path = require('path');
 const { initDb } = require('./db');
@@ -7,6 +8,7 @@ const usersRouter = require('./routes/users');
 const friendsRouter = require('./routes/friends');
 const settingsRouter = require('./routes/settings');
 const gameHistoryRouter = require('./routes/game-history');
+const { initWebSocket } = require('./ws');
 const { version } = require('./package.json');
 
 // Initialize database
@@ -60,6 +62,8 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3002;
-app.listen(PORT, '127.0.0.1', () => {
+const server = http.createServer(app);
+initWebSocket(server);
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`Chess API listening on 127.0.0.1:${PORT}`);
 });
