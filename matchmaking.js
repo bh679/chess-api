@@ -16,8 +16,9 @@ function joinQueue(ws, sessionId, name, timeControl) {
     }
   }
 
-  // Check if already in a room
-  if (rooms.getRoomForSession(sessionId)) {
+  // Check if already in an active room
+  const existingRoom = rooms.getRoomForSession(sessionId);
+  if (existingRoom && existingRoom.status !== 'finished') {
     send(ws, 'error', { message: 'Already in a game' });
     return;
   }
