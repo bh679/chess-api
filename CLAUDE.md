@@ -107,3 +107,18 @@ cd chess-api && npm install
 - **Database migrations must be backwards-compatible** — add columns with DEFAULT values, never drop columns, always handle existing data
 - **Match existing code style** — CommonJS `require()`, not ES modules; callback-free `better-sqlite3` synchronous API
 - **Health endpoint must return version** — always update the version in `package.json`, which the health endpoint reads
+
+## Deployment
+
+- **Auto-deploy endpoint:** `https://brennan.games/chess/deploy.php?token=TOKEN&target=client|server|both`
+  - `target=server` — pulls server code, runs `npm install`, restarts via pm2, then pulls client
+  - `target=client` — pulls latest client code only
+  - `target=both` — same as server (server first, then client)
+- **Deploy token:** stored at `/home/bitnami/server/.deploy-token` on the production server
+- **After merging a PR to main:** Offer to trigger the production server deploy. Present as a plan-mode prompt:
+  1. Show the version change (current deployed vs new version from the merge)
+  2. Ask: "Ready to deploy server update to production?"
+  3. If approved: `curl -s "https://brennan.games/chess/deploy.php?token=TOKEN&target=server"`
+  4. Verify the response shows `"status":"ok"`
+  5. The deploy will also pull the latest client code automatically
+- **Version dependency:** The client's `package.json` has a `requiredApiVersion` field. If the client requires a newer server than what's deployed, client deploys are blocked until the server is updated first
