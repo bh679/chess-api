@@ -534,6 +534,8 @@ function listGamesByUser(userId, { limit = 15, offset = 0, category, result, opp
     where += ` AND g.result IN ('draw', '1/2-1/2')`;
   } else if (result === 'abandoned') {
     where += ` AND g.result = 'abandoned'`;
+  } else if (result === 'ongoing') {
+    where += ` AND g.result IS NULL`;
   }
 
   if (gameType && gameType !== 'all') {
