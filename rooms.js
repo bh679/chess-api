@@ -33,7 +33,9 @@ function parseTimeControl(tc) {
 
 function createRoom(ws, sessionId, name, timeControl) {
   const roomId = generateRoomCode();
-  const tc = parseTimeControl(timeControl);
+  // "any" defaults to 5+0 for room creation
+  const effectiveTc = timeControl === 'any' ? '5+0' : timeControl;
+  const tc = parseTimeControl(effectiveTc);
   const timeMs = tc ? tc.minutes * 60 * 1000 : 0;
 
   const room = {
@@ -41,7 +43,7 @@ function createRoom(ws, sessionId, name, timeControl) {
     white: { ws, sessionId, name: name || 'White', connected: true },
     black: null,
     chess: new Chess(),
-    timeControl: timeControl || 'none',
+    timeControl: effectiveTc || 'none',
     clocks: tc ? { w: timeMs, b: timeMs, increment: tc.increment * 1000, lastMoveAt: null } : null,
     moves: [],
     status: 'waiting',
