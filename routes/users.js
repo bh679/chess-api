@@ -32,13 +32,18 @@ router.get('/users/:username/games', optionalAuth, (req, res) => {
     return res.status(403).json({ error: 'Game history is private' });
   }
 
-  const { limit, offset, category, result, opponent } = req.query;
+  const { limit, offset, category, result, opponent, gameType, playerType, timeControl, eloMin, eloMax } = req.query;
   const data = listGamesByUser(user.id, {
     limit: parseInt(limit) || 15,
     offset: parseInt(offset) || 0,
     category,
     result,
-    opponent
+    opponent,
+    gameType,
+    playerType,
+    timeControl,
+    eloMin,
+    eloMax
   });
   res.json(data);
 });

@@ -520,18 +520,53 @@ function updateSettings(userId, settings) {
 
 // --- Game queries by user ---
 
-function listGamesByUser(userId, { limit = 15, offset = 0, category, result, opponent } = {}) {
+function listGamesByUser(userId, { limit = 15, offset = 0, category, result, opponent, gameType, playerType, timeControl, eloMin, eloMax } = {}) {
   let where = '(g.white_user_id = ? OR g.black_user_id = ?)';
   const params = [userId, userId];
 
   if (result === 'win') {
-    where += ` AND ((g.white_user_id = ? AND g.result = '1-0') OR (g.black_user_id = ? AND g.result = '0-1'))`;
+    where += ` AND ((g.white_user_id = ? AND g.result = 'white') OR (g.black_user_id = ? AND g.result = 'black'))`;
     params.push(userId, userId);
   } else if (result === 'loss') {
-    where += ` AND ((g.white_user_id = ? AND g.result = '0-1') OR (g.black_user_id = ? AND g.result = '1-0'))`;
+    where += ` AND ((g.white_user_id = ? AND g.result = 'black') OR (g.black_user_id = ? AND g.result = 'white'))`;
     params.push(userId, userId);
   } else if (result === 'draw') {
-    where += ` AND g.result = '1/2-1/2'`;
+    where += ` AND g.result = 'draw'`;
+  } else if (result === 'abandoned') {
+    where += ` AND g.result = 'abandoned'`;
+  }
+
+  if (gameType && gameType !== 'all') {
+    where += ' AND g.game_type = ?';
+    params.push(gameType);
+  }
+
+  if (playerType === 'hvai') {
+    where += ' AND (g.white_is_ai + g.black_is_ai) = 1';
+  } else if (playerType === 'hvh') {
+    where += ' AND g.white_is_ai = 0 AND g.black_is_ai = 0';
+  } else if (playerType === 'avai') {
+    where += ' AND g.white_is_ai = 1 AND g.black_is_ai = 1';
+  }
+
+  if (timeControl && timeControl !== 'all') {
+    where += ' AND g.time_control = ?';
+    params.push(timeControl);
+  }
+
+  if (eloMin) {
+    const min = parseInt(eloMin, 10);
+    if (!isNaN(min)) {
+      where += ' AND (COALESCE(g.white_elo, 0) >= ? OR COALESCE(g.black_elo, 0) >= ?)';
+      params.push(min, min);
+    }
+  }
+  if (eloMax) {
+    const max = parseInt(eloMax, 10);
+    if (!isNaN(max)) {
+      where += ' AND (g.white_elo IS NOT NULL AND g.white_elo <= ? OR g.black_elo IS NOT NULL AND g.black_elo <= ?)';
+      params.push(max, max);
+    }
   }
 
   if (opponent) {
