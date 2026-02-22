@@ -178,12 +178,15 @@ function getDb() {
 
 // --- Query helpers ---
 
-function createGame(metadata) {
+function createGame(metadata, userId) {
+  const whiteUserId = (!metadata.white.isAI && userId) ? userId : null;
+  const blackUserId = (!metadata.black.isAI && userId) ? userId : null;
   const stmt = db.prepare(`
     INSERT INTO games (start_time, game_type, time_control, starting_fen,
       white_name, white_is_ai, white_elo, white_engine,
-      black_name, black_is_ai, black_elo, black_engine)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      black_name, black_is_ai, black_elo, black_engine,
+      white_user_id, black_user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const info = stmt.run(
     Date.now(),
@@ -197,7 +200,9 @@ function createGame(metadata) {
     metadata.black.name,
     metadata.black.isAI ? 1 : 0,
     metadata.black.elo ?? null,
-    metadata.black.engineId ?? null
+    metadata.black.engineId ?? null,
+    whiteUserId,
+    blackUserId
   );
   return info.lastInsertRowid;
 }

@@ -1,15 +1,23 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { optionalAuth } = require('../middleware/auth');
 
 // POST /api/games — Create a new game
-router.post('/games', (req, res) => {
+router.post('/games', optionalAuth, (req, res) => {
   try {
     const { gameType, timeControl, startingFen, white, black } = req.body;
     if (!startingFen || !white || !black) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    const id = db.createGame({ gameType, timeControl, startingFen, white, black });
+    // If logged in, set player name and link user to non-AI sides
+    if (req.user) {
+      const displayName = req.user.display_name || req.user.username;
+      if (!white.isAI) white.name = displayName;
+      if (!black.isAI) black.name = displayName;
+    }
+    const userId = req.user ? req.user.id : null;
+    const id = db.createGame({ gameType, timeControl, startingFen, white, black }, userId);
     res.status(201).json({ id: Number(id) });
   } catch (e) {
     console.error('POST /games error:', e.message);
