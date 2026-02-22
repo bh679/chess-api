@@ -1,5 +1,5 @@
 const express = require('express');
-const { listGamesByUser, claimGame, getGame } = require('../db');
+const { listGamesByUser, claimGame, getGame, updatePlayerName } = require('../db');
 const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -40,16 +40,18 @@ router.post('/games/claim-batch', requireAuth, (req, res) => {
   }
 
   let claimed = 0;
+  const userName = req.user.display_name || req.user.username;
   for (const gameId of gameIds) {
     const game = getGame(gameId);
     if (!game) continue;
 
-    // Try to match by player name
-    const userName = req.user.display_name || req.user.username;
-    if (game.white.name === userName && !game.white.userId) {
+    // Claim any unclaimed non-AI side and update player name
+    if (!game.white.isAI && !game.white.userId) {
+      updatePlayerName(gameId, 'white', userName);
       if (claimGame(gameId, 'white', req.user.id)) claimed++;
     }
-    if (game.black.name === userName && !game.black.userId) {
+    if (!game.black.isAI && !game.black.userId) {
+      updatePlayerName(gameId, 'black', userName);
       if (claimGame(gameId, 'black', req.user.id)) claimed++;
     }
   }
