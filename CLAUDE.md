@@ -118,7 +118,7 @@ cd chess-api && npm install
 - **After merging a PR to main:** Offer to trigger the production server deploy. Present as a plan-mode prompt:
   1. Show the version change (current deployed vs new version from the merge)
   2. Ask: "Ready to deploy server update to production?"
-  3. If approved: `curl -s "https://brennan.games/chess/deploy.php?token=TOKEN&target=server"`
+  3. If approved, read the deploy token and run: `curl -s "https://brennan.games/chess/deploy.php?token=$(cat /home/bitnami/server/.deploy-token)&target=server"`
   4. Verify the response shows `"status":"ok"`
   5. The deploy will also pull the latest client code automatically
 - **Version dependency:** The client's `package.json` has a `requiredApiVersion` field. If the client requires a newer server than what's deployed, client deploys are blocked until the server is updated first
