@@ -2,6 +2,11 @@ const express = require('express');
 const path = require('path');
 const { initDb } = require('./db');
 const gamesRouter = require('./routes/games');
+const authRouter = require('./routes/auth');
+const usersRouter = require('./routes/users');
+const friendsRouter = require('./routes/friends');
+const settingsRouter = require('./routes/settings');
+const gameHistoryRouter = require('./routes/game-history');
 const { version } = require('./package.json');
 
 // Initialize database
@@ -30,6 +35,13 @@ app.get('/api/health', (req, res) => {
 
 // Game routes
 app.use('/api', gamesRouter);
+
+// User account routes
+app.use('/api/auth', authRouter);
+app.use('/api', usersRouter);
+app.use('/api', friendsRouter);
+app.use('/api', settingsRouter);
+app.use('/api', gameHistoryRouter);
 
 // SPA catch-all: serve index.html for non-API, non-static paths
 // This allows path-based URLs (/replay, /games) to load the app,
