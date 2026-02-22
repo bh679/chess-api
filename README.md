@@ -51,13 +51,29 @@ pm2 startup  # follow printed instructions to enable on boot
 
 ### Apache proxy
 
-The API listens on `127.0.0.1:3002` by default (not publicly exposed). Override the port with the `PORT` environment variable. Apache proxies `/api/*` requests to it. Add to your Apache SSL config:
+The API listens on `127.0.0.1:3002` by default (not publicly exposed). Override the port with the `PORT` environment variable. Apache proxies `/api/*` and `/ws` requests to it. Add to your Apache SSL config:
 
 ```apache
 ProxyRequests Off
 ProxyPreserveHost On
+
+# REST API proxy
 ProxyPass /api http://127.0.0.1:3002/api
 ProxyPassReverse /api http://127.0.0.1:3002/api
+
+# WebSocket proxy (for live multiplayer)
+RewriteEngine On
+RewriteCond %{HTTP:Upgrade} websocket [NC]
+RewriteCond %{HTTP:Connection} upgrade [NC]
+RewriteRule ^/ws$ ws://127.0.0.1:3002/ws [P,L]
+ProxyPass /ws ws://127.0.0.1:3002/ws
+ProxyPassReverse /ws ws://127.0.0.1:3002/ws
+```
+
+Ensure the following Apache modules are enabled: `proxy`, `proxy_http`, `proxy_wstunnel`, `rewrite`:
+
+```bash
+sudo a2enmod proxy proxy_http proxy_wstunnel rewrite
 ```
 
 Then restart Apache:

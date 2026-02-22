@@ -6,7 +6,7 @@ const matchmaking = require('./matchmaking');
 const connections = new Map();
 
 function initWebSocket(server) {
-  const wss = new WebSocketServer({ server });
+  const wss = new WebSocketServer({ server, path: '/ws' });
 
   wss.on('connection', (ws) => {
     let sessionId = null;
