@@ -6,7 +6,7 @@ REST API server for persistent chess game storage. Stores games and moves in a S
 
 ## Version
 
-**Current:** `1.03.0001`
+**Current:** `1.04.0000`
 
 The `/api/health` endpoint returns the server version. The client checks this on startup to verify compatibility.
 
@@ -18,6 +18,8 @@ The `/api/health` endpoint returns the server version. The client checks this on
   - `better-sqlite3` ^11.0 — SQLite3 database driver (native addon)
   - `ws` ^8.18 — WebSocket server for live multiplayer
   - `chess.js` ^1.0 — Server-side move validation for multiplayer games
+  - `bcryptjs` ^3.0 — Password hashing for local auth
+  - `jsonwebtoken` ^9.0 — JWT token generation and verification
 
 ## Setup
 
@@ -97,6 +99,17 @@ sudo /opt/bitnami/ctlscript.sh restart apache
 | POST | `/api/games/list` | List games by IDs (body: `{ids, limit, offset}`) |
 | POST | `/api/games/list-all` | List all games with at least 1 move (body: `{limit, offset}`) |
 | DELETE | `/api/games/:id` | Delete a game and its moves |
+| POST | `/api/auth/register` | Register a new user (bcrypt hashing) |
+| POST | `/api/auth/login` | Login with username/password (returns JWT) |
+| GET | `/api/users/:username` | Get user profile with Glicko-2 ratings |
+| GET | `/api/users/:username/games` | Get user's games (filtered: result, gameType, playerType, timeControl, elo) |
+| GET | `/api/friends` | List friends and pending requests (requires auth) |
+| POST | `/api/friends/request` | Send a friend request (requires auth) |
+| POST | `/api/friends/respond` | Accept/reject a friend request (requires auth) |
+| DELETE | `/api/friends/:id` | Remove a friend (requires auth) |
+| GET | `/api/settings` | Get user settings (requires auth) |
+| PUT | `/api/settings` | Update user settings (requires auth) |
+| GET | `/api/game-history` | Get game history (with optional auth for user context) |
 
 ## WebSocket (Live Multiplayer)
 
@@ -148,8 +161,12 @@ The WebSocket server listens on `/ws` path (same port as HTTP). It handles real-
 SQLite database stored at `data/chess.db` (auto-created on first run). Uses WAL mode for concurrent read/write performance.
 
 **Tables:**
-- `games` — game metadata (players, result, time control, timestamps)
+- `games` — game metadata (players, result, time control, timestamps, user IDs)
 - `moves` — individual moves (FEN, SAN, timestamps), foreign key to games with CASCADE delete, UNIQUE constraint on `(game_id, ply)` for idempotent sync
+- `users` — user accounts (username, display name, bcrypt password hash)
+- `friends` — friend relationships and pending requests
+- `settings` — user settings (JSON blob per user)
+- `ratings` — Glicko-2 ratings per user per time control category
 
 ## Project Structure
 
@@ -158,8 +175,15 @@ index.js            Express app, health endpoint, HTTP+WebSocket server startup
 ws.js               WebSocket server — message routing, auth, keepalive
 rooms.js            Room manager — create/join/move/resign/draw/rematch/reconnect
 matchmaking.js      FIFO matchmaking queue per time control
-db.js               SQLite schema, query helpers
-routes/games.js     All game CRUD endpoints
+db.js               SQLite schema, query helpers (games, users, friends, settings, ratings)
+rating.js           Glicko-2 rating engine with time control classification
+middleware/auth.js  JWT auth middleware (requireAuth, optionalAuth)
+routes/games.js     Game CRUD endpoints (with optionalAuth for user linking)
+routes/auth.js      Registration and login endpoints
+routes/users.js     User profile and filtered game list
+routes/friends.js   Friends system (request, accept, reject, remove)
+routes/settings.js  User settings sync
+routes/game-history.js  Game history with optional auth
 data/chess.db       SQLite database (auto-created, gitignored)
 package.json        Dependencies and metadata
 ```
