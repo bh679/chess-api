@@ -4,6 +4,12 @@ REST API server for persistent chess game storage. Stores games and moves in a S
 
 **Client repository:** [bh679/Chess](https://github.com/bh679/Chess) (also mirrored at [bh679/Narrative-Chess](https://github.com/bh679/Narrative-Chess))
 
+## Documentation
+
+- [Wiki](https://github.com/bh679/chess-api/wiki) — full server documentation
+- [Roadmap & Project Board](https://github.com/users/bh679/projects/1) — live feature tracking
+- [Client Repository](https://github.com/bh679/Chess) — browser-based chess client
+
 ## Version
 
 **Current:** `1.04.0000`
@@ -86,7 +92,7 @@ Then restart Apache:
 sudo /opt/bitnami/ctlscript.sh restart apache
 ```
 
-## API Endpoints
+## [API Endpoints](https://github.com/bh679/chess-api/wiki/Features)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -156,7 +162,7 @@ The WebSocket server listens on `/ws` path (same port as HTTP). It handles real-
 
 **Rooms** are stored in-memory only (not persisted to database). A 60-second disconnect grace period allows reconnection without forfeiting.
 
-## Database
+## [Database](https://github.com/bh679/chess-api/wiki/Feature:-SQLite-Database)
 
 SQLite database stored at `data/chess.db` (auto-created on first run). Uses WAL mode for concurrent read/write performance.
 
