@@ -31,19 +31,19 @@ if (process.env.CLIENT_DIR) {
 }
 
 // Health check — includes server version so clients can verify compatibility
-app.get('/api/health', (req, res) => {
+app.get('/api/chess/health', (req, res) => {
   res.json({ status: 'ok', version });
 });
 
 // Game routes
-app.use('/api', gamesRouter);
+app.use('/api/chess', gamesRouter);
 
 // User account routes
-app.use('/api/auth', authRouter);
-app.use('/api', usersRouter);
-app.use('/api', friendsRouter);
-app.use('/api', settingsRouter);
-app.use('/api', gameHistoryRouter);
+app.use('/api/chess/auth', authRouter);
+app.use('/api/chess', usersRouter);
+app.use('/api/chess', friendsRouter);
+app.use('/api/chess', settingsRouter);
+app.use('/api/chess', gameHistoryRouter);
 
 // SPA catch-all: serve index.html for non-API, non-static paths
 // This allows path-based URLs (/replay, /games) to load the app,
