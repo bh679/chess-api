@@ -5,7 +5,7 @@ const queues = new Map();
 
 const DEFAULT_TC = '5+0';
 
-function joinQueue(ws, sessionId, name, timeControl, videoEnabled) {
+function joinQueue(ws, sessionId, name, timeControl, videoEnabled, chess960) {
   const tc = timeControl || DEFAULT_TC;
   const wantsVideo = !!videoEnabled;
 
@@ -24,10 +24,11 @@ function joinQueue(ws, sessionId, name, timeControl, videoEnabled) {
     return;
   }
 
-  const player = { ws, sessionId, name: name || 'Player', videoEnabled: wantsVideo };
+  const wantsChess960 = !!chess960;
+  const player = { ws, sessionId, name: name || 'Player', videoEnabled: wantsVideo, chess960: wantsChess960 };
 
-  // Try to find a match (video players only match video players)
-  const match = findMatch(tc, wantsVideo);
+  // Try to find a match (video and chess960 preferences must match)
+  const match = findMatch(tc, wantsVideo, wantsChess960);
   if (match) {
     const { opponent, matchTc } = match;
 
@@ -35,7 +36,7 @@ function joinQueue(ws, sessionId, name, timeControl, videoEnabled) {
     if (!opponent.ws || opponent.ws.readyState !== 1) {
       // Opponent disconnected, remove them and retry
       removeFromQueue(opponent.sessionId);
-      return joinQueue(ws, sessionId, name, timeControl, videoEnabled);
+      return joinQueue(ws, sessionId, name, timeControl, videoEnabled, chess960);
     }
 
     // Match found — create a room with randomly assigned colors
@@ -44,7 +45,8 @@ function joinQueue(ws, sessionId, name, timeControl, videoEnabled) {
     const blackPlayer = creatorIsWhite ? player : opponent;
 
     const matchVideoEnabled = wantsVideo && opponent.videoEnabled;
-    const room = rooms.createRoom(whitePlayer.ws, whitePlayer.sessionId, whitePlayer.name, matchTc, matchVideoEnabled);
+    const matchChess960 = wantsChess960 && opponent.chess960;
+    const room = rooms.createRoom(whitePlayer.ws, whitePlayer.sessionId, whitePlayer.name, matchTc, matchVideoEnabled, matchChess960);
     rooms.joinRoom(blackPlayer.ws, blackPlayer.sessionId, blackPlayer.name, room.id);
   } else {
     // No match — add to queue
@@ -59,14 +61,14 @@ function joinQueue(ws, sessionId, name, timeControl, videoEnabled) {
  * "any" matches with any TC queue. Specific TCs also check the "any" queue.
  * Returns { opponent, matchTc } or null.
  */
-function findMatch(tc, wantsVideo) {
-  // Filter helper: only match players with the same video preference
-  function videoMatches(player) {
-    return !!player.videoEnabled === !!wantsVideo;
+function findMatch(tc, wantsVideo, wantsChess960) {
+  // Filter helper: only match players with the same video and chess960 preferences
+  function preferencesMatch(player) {
+    return !!player.videoEnabled === !!wantsVideo && !!player.chess960 === !!wantsChess960;
   }
 
   function takeFirstMatch(queue, queueTc) {
-    const idx = queue.findIndex(videoMatches);
+    const idx = queue.findIndex(preferencesMatch);
     if (idx === -1) return null;
     const opponent = queue.splice(idx, 1)[0];
     if (queue.length === 0) queues.delete(queueTc);
