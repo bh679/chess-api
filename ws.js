@@ -60,7 +60,7 @@ function initWebSocket(server) {
       // Route messages
       switch (type) {
         case 'create_room':
-          rooms.createRoom(ws, sessionId, payload?.name, payload?.timeControl, payload?.videoEnabled);
+          rooms.createRoom(ws, sessionId, payload?.name, payload?.timeControl, payload?.videoEnabled, payload?.chess960);
           break;
 
         case 'join_room':
@@ -72,7 +72,7 @@ function initWebSocket(server) {
           break;
 
         case 'quick_match':
-          matchmaking.joinQueue(ws, sessionId, payload?.name, payload?.timeControl, payload?.videoEnabled);
+          matchmaking.joinQueue(ws, sessionId, payload?.name, payload?.timeControl, payload?.videoEnabled, payload?.chess960);
           break;
 
         case 'cancel_queue':

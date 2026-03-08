@@ -24,6 +24,31 @@ function generateRoomCode() {
   return code;
 }
 
+function generateChess960FEN() {
+  const pieces = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'];
+  let backRank;
+  let valid = false;
+  while (!valid) {
+    // Fisher-Yates shuffle
+    backRank = pieces.slice();
+    for (let i = backRank.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [backRank[i], backRank[j]] = [backRank[j], backRank[i]];
+    }
+    const kingPos = backRank.indexOf('k');
+    const rook1Pos = backRank.indexOf('r');
+    const rook2Pos = backRank.lastIndexOf('r');
+    const bishop1Pos = backRank.indexOf('b');
+    const bishop2Pos = backRank.lastIndexOf('b');
+    const bishopsOnOppositeColors = (bishop1Pos % 2) !== (bishop2Pos % 2);
+    const kingBetweenRooks = rook1Pos < kingPos && kingPos < rook2Pos;
+    valid = bishopsOnOppositeColors && kingBetweenRooks;
+  }
+  const rank8 = backRank.join('');
+  const rank1 = backRank.join('').toUpperCase();
+  return `${rank8}/pppppppp/8/8/8/8/PPPPPPPP/${rank1} w - - 0 1`;
+}
+
 function parseTimeControl(tc) {
   if (!tc || tc === 'none') return null;
   // Format: "5+0", "10+5", "3+2", etc.
@@ -32,18 +57,21 @@ function parseTimeControl(tc) {
   return { minutes: parseInt(match[1], 10), increment: parseInt(match[2], 10) };
 }
 
-function createRoom(ws, sessionId, name, timeControl, videoEnabled) {
+function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
   const roomId = generateRoomCode();
   // "any" defaults to 5+0 for room creation
   const effectiveTc = timeControl === 'any' ? '5+0' : timeControl;
   const tc = parseTimeControl(effectiveTc);
   const timeMs = tc ? tc.minutes * 60 * 1000 : 0;
 
+  const is960 = !!chess960;
+  const startFen = is960 ? generateChess960FEN() : undefined;
+
   const room = {
     id: roomId,
     white: { ws, sessionId, name: name || 'White', connected: true, videoReady: false },
     black: null,
-    chess: new Chess(),
+    chess: startFen ? new Chess(startFen) : new Chess(),
     timeControl: effectiveTc || 'none',
     clocks: tc ? { w: timeMs, b: timeMs, increment: tc.increment * 1000, lastMoveAt: null } : null,
     moves: [],
@@ -52,6 +80,7 @@ function createRoom(ws, sessionId, name, timeControl, videoEnabled) {
     createdAt: Date.now(),
     cleanupTimer: null,
     videoEnabled: !!videoEnabled,
+    chess960: is960,
   };
 
   rooms.set(roomId, room);
@@ -109,6 +138,7 @@ function joinRoom(ws, sessionId, name, roomId) {
     roomId: room.id,
     fen: room.chess.fen(),
     timeControl: room.timeControl,
+    chess960: room.chess960,
   };
 
   send(room.white.ws, 'game_start', { ...startPayload, color: 'w', opponentName: room.black.name, videoEnabled: room.videoEnabled });
@@ -294,7 +324,8 @@ function handleRematchResponse(sessionId, accept) {
 
   room.white = { ws: oldBlack.ws, sessionId: oldBlack.sessionId, name: oldBlack.name, connected: oldBlack.connected };
   room.black = { ws: oldWhite.ws, sessionId: oldWhite.sessionId, name: oldWhite.name, connected: oldWhite.connected };
-  room.chess = new Chess();
+  const rematchFen = room.chess960 ? generateChess960FEN() : undefined;
+  room.chess = rematchFen ? new Chess(rematchFen) : new Chess();
   room.moves = [];
   room.status = 'playing';
   room.rematchOfferedBy = null;
@@ -319,6 +350,7 @@ function handleRematchResponse(sessionId, accept) {
     roomId: room.id,
     fen: room.chess.fen(),
     timeControl: room.timeControl,
+    chess960: room.chess960,
   };
 
   send(room.white.ws, 'rematch_start', { ...startPayload, color: 'w', opponentName: room.black.name });
@@ -403,6 +435,7 @@ function attemptReconnect(ws, sessionId, room) {
     opponentName: getPlayerBySide(room, side === 'w' ? 'b' : 'w').name,
     opponentConnected: getPlayerBySide(room, side === 'w' ? 'b' : 'w').connected,
     videoEnabled: room.videoEnabled,
+    chess960: room.chess960,
   });
 
   // Notify opponent
