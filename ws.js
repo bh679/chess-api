@@ -134,6 +134,39 @@ function initWebSocket(server) {
           rooms.handleVideoReady(sessionId);
           break;
 
+        case 'video_end':
+          rooms.relaySignaling(sessionId, 'video_ended', {});
+          break;
+
+        // Shared post-game review
+        case 'review_enter':
+          rooms.handleReviewEnter(sessionId);
+          break;
+
+        case 'review_navigate':
+          rooms.handleReviewNavigate(sessionId, payload?.ply);
+          break;
+
+        case 'review_arrow':
+          rooms.handleReviewArrow(sessionId, payload?.action, payload?.from, payload?.to);
+          break;
+
+        case 'review_clear_arrows':
+          rooms.handleReviewClearArrows(sessionId);
+          break;
+
+        case 'review_analysis_started':
+          rooms.handleReviewAnalysisStarted(sessionId);
+          break;
+
+        case 'review_analysis':
+          rooms.handleReviewAnalysis(sessionId, payload);
+          break;
+
+        case 'review_exit':
+          rooms.handleReviewExit(sessionId);
+          break;
+
         default:
           send(ws, 'error', { message: `Unknown message type: ${type}` });
       }
