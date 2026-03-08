@@ -44,7 +44,7 @@ function initWebSocket(server) {
       // Route messages
       switch (type) {
         case 'create_room':
-          rooms.createRoom(ws, sessionId, payload?.name, payload?.timeControl);
+          rooms.createRoom(ws, sessionId, payload?.name, payload?.timeControl, payload?.videoEnabled);
           break;
 
         case 'join_room':
@@ -56,7 +56,7 @@ function initWebSocket(server) {
           break;
 
         case 'quick_match':
-          matchmaking.joinQueue(ws, sessionId, payload?.name, payload?.timeControl);
+          matchmaking.joinQueue(ws, sessionId, payload?.name, payload?.timeControl, payload?.videoEnabled);
           break;
 
         case 'cancel_queue':
@@ -93,6 +93,17 @@ function initWebSocket(server) {
 
         case 'rematch_respond':
           rooms.handleRematchResponse(sessionId, !!payload?.accept);
+          break;
+
+        // WebRTC video signaling — relay to opponent
+        case 'rtc_offer':
+        case 'rtc_answer':
+        case 'rtc_ice':
+          rooms.relaySignaling(sessionId, type, payload);
+          break;
+
+        case 'video_ready':
+          rooms.handleVideoReady(sessionId);
           break;
 
         default:
