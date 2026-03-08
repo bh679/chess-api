@@ -8,6 +8,7 @@ const usersRouter = require('./routes/users');
 const friendsRouter = require('./routes/friends');
 const settingsRouter = require('./routes/settings');
 const gameHistoryRouter = require('./routes/game-history');
+const roomsRouter = require('./routes/rooms');
 const { initWebSocket } = require('./ws');
 const { version } = require('./package.json');
 
@@ -44,6 +45,7 @@ app.use('/api', usersRouter);
 app.use('/api', friendsRouter);
 app.use('/api', settingsRouter);
 app.use('/api', gameHistoryRouter);
+app.use('/api', roomsRouter);
 
 // SPA catch-all: serve index.html for non-API, non-static paths
 // This allows path-based URLs (/replay, /games) to load the app,

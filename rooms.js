@@ -10,6 +10,7 @@ const sessionRooms = new Map();
 const ROOM_CODE_LENGTH = 6;
 const ROOM_TTL_AFTER_END = 5 * 60 * 1000;     // 5 min
 const DISCONNECT_GRACE_PERIOD = 60 * 1000;      // 60s
+const WAITING_ROOM_TTL = 30 * 60 * 1000;        // 30 min grace for pending rooms
 
 function generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1 to avoid confusion
@@ -74,8 +75,15 @@ function joinRoom(ws, sessionId, name, roomId) {
     return null;
   }
   if (room.white.sessionId === sessionId) {
-    send(ws, 'error', { message: 'You are already in this room' });
-    return null;
+    // Creator reconnecting to their waiting room
+    room.white.ws = ws;
+    room.white.connected = true;
+    if (room.waitingCleanupTimer) {
+      clearTimeout(room.waitingCleanupTimer);
+      room.waitingCleanupTimer = null;
+    }
+    send(ws, 'room_created', { roomId: room.id, color: 'w' });
+    return room;
   }
 
   room.black = { ws, sessionId, name: name || 'Black', connected: true };
@@ -331,8 +339,15 @@ function handleDisconnect(sessionId) {
   player.disconnectedAt = Date.now();
 
   if (room.status === 'waiting') {
-    // Creator disconnected before anyone joined — remove room
-    cleanupRoom(roomId);
+    // Creator disconnected — keep room alive with a grace period
+    if (!room.waitingCleanupTimer) {
+      room.waitingCleanupTimer = setTimeout(() => {
+        const r = rooms.get(roomId);
+        if (r && r.status === 'waiting' && !r.white.connected) {
+          cleanupRoom(roomId);
+        }
+      }, WAITING_ROOM_TTL);
+    }
     return;
   }
 
@@ -434,6 +449,7 @@ function cleanupRoom(roomId) {
   if (room.black) sessionRooms.delete(room.black.sessionId);
   clearTimeout(room.cleanupTimer);
   clearTimeout(room.disconnectTimer);
+  clearTimeout(room.waitingCleanupTimer);
   rooms.delete(roomId);
 }
 
@@ -465,6 +481,47 @@ function getRoomCount() {
   return rooms.size;
 }
 
+/**
+ * List all rooms where the session is a participant (waiting or playing).
+ * Returns serializable room summaries (no ws references).
+ */
+function listRoomsForSession(sessionId) {
+  const result = [];
+  for (const room of rooms.values()) {
+    const side = getPlayerSide(room, sessionId);
+    if (!side) continue;
+    if (room.status !== 'waiting' && room.status !== 'playing') continue;
+    result.push({
+      roomId: room.id,
+      status: room.status,
+      timeControl: room.timeControl,
+      createdAt: room.createdAt,
+      color: side,
+      moveCount: room.moves.length,
+      white: { name: room.white.name },
+      black: room.black ? { name: room.black.name } : null,
+      dbGameId: room.dbGameId,
+    });
+  }
+  return result;
+}
+
+/**
+ * Cancel a waiting room owned by the session.
+ * Returns true if cancelled, false if not found or not allowed.
+ */
+function cancelRoom(sessionId) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return false;
+
+  const room = rooms.get(roomId);
+  if (!room || room.status !== 'waiting') return false;
+  if (room.white.sessionId !== sessionId) return false;
+
+  cleanupRoom(roomId);
+  return true;
+}
+
 module.exports = {
   createRoom,
   joinRoom,
@@ -477,5 +534,7 @@ module.exports = {
   handleDisconnect,
   getRoomForSession,
   getRoomCount,
+  listRoomsForSession,
+  cancelRoom,
   sessionRooms,
 };

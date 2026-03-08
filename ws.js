@@ -5,6 +5,9 @@ const matchmaking = require('./matchmaking');
 // Map WebSocket → sessionId for disconnect handling
 const connections = new Map();
 
+// Track connection count per sessionId for multi-tab safety
+const sessionConnectionCount = new Map();
+
 function initWebSocket(server) {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -31,13 +34,26 @@ function initWebSocket(server) {
         sessionId = payload.sessionId;
         connections.set(ws, sessionId);
 
+        // Track connection count for this session
+        const count = sessionConnectionCount.get(sessionId) || 0;
+        sessionConnectionCount.set(sessionId, count + 1);
+
         // Check for existing room to reconnect
         const existingRoom = rooms.getRoomForSession(sessionId);
         if (existingRoom && existingRoom.status === 'playing') {
           rooms.joinRoom(ws, sessionId, null, existingRoom.id);
+        } else if (existingRoom && existingRoom.status === 'waiting') {
+          // Reconnect to waiting room (updates ws reference)
+          rooms.joinRoom(ws, sessionId, null, existingRoom.id);
         }
 
         send(ws, 'auth_ok', {});
+
+        // Auto-send rooms list on connect
+        const userRooms = rooms.listRoomsForSession(sessionId);
+        if (userRooms.length > 0) {
+          send(ws, 'rooms_list', { rooms: userRooms });
+        }
         return;
       }
 
@@ -95,6 +111,18 @@ function initWebSocket(server) {
           rooms.handleRematchResponse(sessionId, !!payload?.accept);
           break;
 
+        case 'list_rooms':
+          send(ws, 'rooms_list', { rooms: rooms.listRoomsForSession(sessionId) });
+          break;
+
+        case 'cancel_room':
+          if (rooms.cancelRoom(sessionId)) {
+            send(ws, 'room_cancelled', {});
+          } else {
+            send(ws, 'error', { message: 'No waiting room to cancel' });
+          }
+          break;
+
         default:
           send(ws, 'error', { message: `Unknown message type: ${type}` });
       }
@@ -102,9 +130,18 @@ function initWebSocket(server) {
 
     ws.on('close', () => {
       if (sessionId) {
-        rooms.handleDisconnect(sessionId);
-        matchmaking.handleDisconnect(sessionId);
         connections.delete(ws);
+
+        // Decrement connection count — only disconnect room when no connections remain
+        const count = (sessionConnectionCount.get(sessionId) || 1) - 1;
+        if (count <= 0) {
+          sessionConnectionCount.delete(sessionId);
+          rooms.handleDisconnect(sessionId);
+        } else {
+          sessionConnectionCount.set(sessionId, count);
+        }
+
+        matchmaking.handleDisconnect(sessionId);
       }
     });
 
