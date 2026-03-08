@@ -31,7 +31,7 @@ function parseTimeControl(tc) {
   return { minutes: parseInt(match[1], 10), increment: parseInt(match[2], 10) };
 }
 
-function createRoom(ws, sessionId, name, timeControl) {
+function createRoom(ws, sessionId, name, timeControl, videoEnabled) {
   const roomId = generateRoomCode();
   // "any" defaults to 5+0 for room creation
   const effectiveTc = timeControl === 'any' ? '5+0' : timeControl;
@@ -40,7 +40,7 @@ function createRoom(ws, sessionId, name, timeControl) {
 
   const room = {
     id: roomId,
-    white: { ws, sessionId, name: name || 'White', connected: true },
+    white: { ws, sessionId, name: name || 'White', connected: true, videoReady: false },
     black: null,
     chess: new Chess(),
     timeControl: effectiveTc || 'none',
@@ -50,12 +50,13 @@ function createRoom(ws, sessionId, name, timeControl) {
     dbGameId: null,
     createdAt: Date.now(),
     cleanupTimer: null,
+    videoEnabled: !!videoEnabled,
   };
 
   rooms.set(roomId, room);
   sessionRooms.set(sessionId, roomId);
 
-  send(ws, 'room_created', { roomId, color: 'w' });
+  send(ws, 'room_created', { roomId, color: 'w', videoEnabled: room.videoEnabled });
   return room;
 }
 
@@ -78,7 +79,7 @@ function joinRoom(ws, sessionId, name, roomId) {
     return null;
   }
 
-  room.black = { ws, sessionId, name: name || 'Black', connected: true };
+  room.black = { ws, sessionId, name: name || 'Black', connected: true, videoReady: false };
   room.status = 'playing';
   sessionRooms.set(sessionId, roomId);
 
@@ -102,8 +103,8 @@ function joinRoom(ws, sessionId, name, roomId) {
     timeControl: room.timeControl,
   };
 
-  send(room.white.ws, 'game_start', { ...startPayload, color: 'w', opponentName: room.black.name });
-  send(room.black.ws, 'game_start', { ...startPayload, color: 'b', opponentName: room.white.name });
+  send(room.white.ws, 'game_start', { ...startPayload, color: 'w', opponentName: room.black.name, videoEnabled: room.videoEnabled });
+  send(room.black.ws, 'game_start', { ...startPayload, color: 'b', opponentName: room.white.name, videoEnabled: room.videoEnabled });
 
   return room;
 }
@@ -385,6 +386,7 @@ function attemptReconnect(ws, sessionId, room) {
     clocks: clockPayload,
     opponentName: getPlayerBySide(room, side === 'w' ? 'b' : 'w').name,
     opponentConnected: getPlayerBySide(room, side === 'w' ? 'b' : 'w').connected,
+    videoEnabled: room.videoEnabled,
   });
 
   // Notify opponent
@@ -465,6 +467,40 @@ function getRoomCount() {
   return rooms.size;
 }
 
+// --- WebRTC video signaling ---
+
+function relaySignaling(sessionId, type, payload) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room) return;
+  const side = getPlayerSide(room, sessionId);
+  if (!side) return;
+  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+  if (opponent && opponent.ws) {
+    send(opponent.ws, type, payload);
+  }
+}
+
+function handleVideoReady(sessionId) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || !room.videoEnabled) return;
+  const side = getPlayerSide(room, sessionId);
+  if (!side) return;
+  const player = getPlayerBySide(room, side);
+  player.videoReady = true;
+  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+  if (opponent && opponent.videoReady) {
+    // White is always the WebRTC initiator (creates the offer)
+    send(room.white.ws, 'video_start', { initiator: true });
+    send(room.black.ws, 'video_start', { initiator: false });
+  } else if (opponent && opponent.ws) {
+    send(opponent.ws, 'video_peer_ready', {});
+  }
+}
+
 module.exports = {
   createRoom,
   joinRoom,
@@ -475,6 +511,8 @@ module.exports = {
   handleRematchOffer,
   handleRematchResponse,
   handleDisconnect,
+  relaySignaling,
+  handleVideoReady,
   getRoomForSession,
   getRoomCount,
   sessionRooms,
