@@ -12,7 +12,7 @@ REST API server for persistent chess game storage. Stores games and moves in a S
 
 ## Version
 
-**Current:** `1.06.0000`
+**Current:** `1.07.0000`
 
 The `/api/health` endpoint returns the server version. The client checks this on startup to verify compatibility.
 
