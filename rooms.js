@@ -288,6 +288,7 @@ function handleRematchResponse(sessionId, accept) {
 
   // Swap colors and start new game
   clearTimeout(room.cleanupTimer);
+  room.review = null; // Clear review state on rematch
   const oldWhite = room.white;
   const oldBlack = room.black;
 
@@ -429,6 +430,13 @@ function getCurrentClockTime(room, side) {
 function finishGame(room, result, reason) {
   room.status = 'finished';
 
+  // Initialize shared review state
+  room.review = {
+    players: new Set(),
+    currentPly: -1,
+    analysisProvider: null,
+  };
+
   // Persist result
   if (room.dbGameId) {
     endGame(room.dbGameId, result, reason);
@@ -558,6 +566,117 @@ function handleVideoReady(sessionId) {
   }
 }
 
+// --- Shared post-game review ---
+
+function handleReviewEnter(sessionId) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || room.status !== 'finished' || !room.review) return;
+
+  const side = getPlayerSide(room, sessionId);
+  if (!side) return;
+
+  room.review.players.add(side);
+  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+  if (opponent && opponent.ws) {
+    send(opponent.ws, 'review_entered', { side });
+  }
+}
+
+function handleReviewNavigate(sessionId, ply) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || !room.review) return;
+
+  const side = getPlayerSide(room, sessionId);
+  if (!side || !room.review.players.has(side)) return;
+
+  room.review.currentPly = ply;
+  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+  if (opponent && opponent.ws && room.review.players.has(side === 'w' ? 'b' : 'w')) {
+    send(opponent.ws, 'review_navigate', { ply, side });
+  }
+}
+
+function handleReviewArrow(sessionId, action, from, to) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || !room.review) return;
+
+  const side = getPlayerSide(room, sessionId);
+  if (!side || !room.review.players.has(side)) return;
+
+  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+  if (opponent && opponent.ws && room.review.players.has(side === 'w' ? 'b' : 'w')) {
+    send(opponent.ws, 'review_arrow', { action, from, to, side });
+  }
+}
+
+function handleReviewClearArrows(sessionId) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || !room.review) return;
+
+  const side = getPlayerSide(room, sessionId);
+  if (!side || !room.review.players.has(side)) return;
+
+  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+  if (opponent && opponent.ws && room.review.players.has(side === 'w' ? 'b' : 'w')) {
+    send(opponent.ws, 'review_clear_arrows', { side });
+  }
+}
+
+function handleReviewAnalysisStarted(sessionId) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || !room.review) return;
+
+  const side = getPlayerSide(room, sessionId);
+  if (!side || !room.review.players.has(side)) return;
+
+  room.review.analysisProvider = side;
+  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+  if (opponent && opponent.ws && room.review.players.has(side === 'w' ? 'b' : 'w')) {
+    send(opponent.ws, 'review_analysis_started', { side });
+  }
+}
+
+function handleReviewAnalysis(sessionId, data) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || !room.review) return;
+
+  const side = getPlayerSide(room, sessionId);
+  if (!side || !room.review.players.has(side)) return;
+
+  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+  if (opponent && opponent.ws && room.review.players.has(side === 'w' ? 'b' : 'w')) {
+    send(opponent.ws, 'review_analysis', data);
+  }
+}
+
+function handleReviewExit(sessionId) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || !room.review) return;
+
+  const side = getPlayerSide(room, sessionId);
+  if (!side) return;
+
+  room.review.players.delete(side);
+  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+  if (opponent && opponent.ws) {
+    send(opponent.ws, 'review_exited', { side });
+  }
+}
+
 module.exports = {
   createRoom,
   joinRoom,
@@ -570,6 +689,13 @@ module.exports = {
   handleDisconnect,
   relaySignaling,
   handleVideoReady,
+  handleReviewEnter,
+  handleReviewNavigate,
+  handleReviewArrow,
+  handleReviewClearArrows,
+  handleReviewAnalysisStarted,
+  handleReviewAnalysis,
+  handleReviewExit,
   getRoomForSession,
   getRoomCount,
   listRoomsForSession,
