@@ -5,8 +5,9 @@ const queues = new Map();
 
 const DEFAULT_TC = '5+0';
 
-function joinQueue(ws, sessionId, name, timeControl) {
+function joinQueue(ws, sessionId, name, timeControl, videoEnabled) {
   const tc = timeControl || DEFAULT_TC;
+  const wantsVideo = !!videoEnabled;
 
   // Check if already in a queue
   for (const [, q] of queues) {
@@ -23,10 +24,10 @@ function joinQueue(ws, sessionId, name, timeControl) {
     return;
   }
 
-  const player = { ws, sessionId, name: name || 'Player' };
+  const player = { ws, sessionId, name: name || 'Player', videoEnabled: wantsVideo };
 
-  // Try to find a match
-  const match = findMatch(tc);
+  // Try to find a match (video players only match video players)
+  const match = findMatch(tc, wantsVideo);
   if (match) {
     const { opponent, matchTc } = match;
 
@@ -34,7 +35,7 @@ function joinQueue(ws, sessionId, name, timeControl) {
     if (!opponent.ws || opponent.ws.readyState !== 1) {
       // Opponent disconnected, remove them and retry
       removeFromQueue(opponent.sessionId);
-      return joinQueue(ws, sessionId, name, timeControl);
+      return joinQueue(ws, sessionId, name, timeControl, videoEnabled);
     }
 
     // Match found — create a room with randomly assigned colors
@@ -42,7 +43,8 @@ function joinQueue(ws, sessionId, name, timeControl) {
     const whitePlayer = creatorIsWhite ? opponent : player;
     const blackPlayer = creatorIsWhite ? player : opponent;
 
-    const room = rooms.createRoom(whitePlayer.ws, whitePlayer.sessionId, whitePlayer.name, matchTc);
+    const matchVideoEnabled = wantsVideo && opponent.videoEnabled;
+    const room = rooms.createRoom(whitePlayer.ws, whitePlayer.sessionId, whitePlayer.name, matchTc, matchVideoEnabled);
     rooms.joinRoom(blackPlayer.ws, blackPlayer.sessionId, blackPlayer.name, room.id);
   } else {
     // No match — add to queue
@@ -57,14 +59,25 @@ function joinQueue(ws, sessionId, name, timeControl) {
  * "any" matches with any TC queue. Specific TCs also check the "any" queue.
  * Returns { opponent, matchTc } or null.
  */
-function findMatch(tc) {
+function findMatch(tc, wantsVideo) {
+  // Filter helper: only match players with the same video preference
+  function videoMatches(player) {
+    return !!player.videoEnabled === !!wantsVideo;
+  }
+
+  function takeFirstMatch(queue, queueTc) {
+    const idx = queue.findIndex(videoMatches);
+    if (idx === -1) return null;
+    const opponent = queue.splice(idx, 1)[0];
+    if (queue.length === 0) queues.delete(queueTc);
+    return opponent;
+  }
+
   if (tc === 'any') {
-    // "Any" player: check all queues for any waiting player
+    // "Any" player: check all queues for any waiting player with matching video pref
     for (const [queueTc, queue] of queues) {
-      if (queue.length > 0) {
-        const opponent = queue.shift();
-        if (queue.length === 0) queues.delete(queueTc);
-        // Use the other player's TC, or default if both are "any"
+      const opponent = takeFirstMatch(queue, queueTc);
+      if (opponent) {
         const matchTc = queueTc === 'any' ? DEFAULT_TC : queueTc;
         return { opponent, matchTc };
       }
@@ -74,18 +87,16 @@ function findMatch(tc) {
 
   // Specific TC: check same-TC queue first
   const sameQueue = queues.get(tc);
-  if (sameQueue && sameQueue.length > 0) {
-    const opponent = sameQueue.shift();
-    if (sameQueue.length === 0) queues.delete(tc);
-    return { opponent, matchTc: tc };
+  if (sameQueue) {
+    const opponent = takeFirstMatch(sameQueue, tc);
+    if (opponent) return { opponent, matchTc: tc };
   }
 
   // Then check "any" queue
   const anyQueue = queues.get('any');
-  if (anyQueue && anyQueue.length > 0) {
-    const opponent = anyQueue.shift();
-    if (anyQueue.length === 0) queues.delete('any');
-    return { opponent, matchTc: tc };
+  if (anyQueue) {
+    const opponent = takeFirstMatch(anyQueue, 'any');
+    if (opponent) return { opponent, matchTc: tc };
   }
 
   return null;
