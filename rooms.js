@@ -116,7 +116,15 @@ function joinRoom(ws, sessionId, name, roomId) {
     return room;
   }
 
-  room.black = { ws, sessionId, name: name || 'Black', connected: true, videoReady: false };
+  // Randomly assign colors — 50/50 chance creator gets white or black
+  const joiner = { ws, sessionId, name: name || 'Joiner', connected: true, videoReady: false };
+  const creator = room.white;
+  if (Math.random() < 0.5) {
+    room.white = joiner;
+    room.black = creator;
+  } else {
+    room.black = joiner;
+  }
   room.status = 'playing';
   sessionRooms.set(sessionId, roomId);
 
