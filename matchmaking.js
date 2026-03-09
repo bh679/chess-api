@@ -25,7 +25,7 @@ function joinQueue(ws, sessionId, name, timeControl, videoEnabled, chess960) {
   }
 
   const wantsChess960 = !!chess960;
-  const player = { ws, sessionId, name: name || 'Player', videoEnabled: wantsVideo, chess960: wantsChess960 };
+  const player = { ws, sessionId, name: name || 'Opponent', videoEnabled: wantsVideo, chess960: wantsChess960 };
 
   // Try to find a match (video and chess960 preferences must match)
   const match = findMatch(tc, wantsVideo, wantsChess960);
