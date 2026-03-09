@@ -69,7 +69,7 @@ function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
 
   const room = {
     id: roomId,
-    white: { ws, sessionId, name: name || 'White', connected: true, videoReady: false },
+    white: { ws, sessionId, name: name || 'Opponent', connected: true, videoReady: false },
     black: null,
     chess: startFen ? new Chess(startFen) : new Chess(),
     timeControl: effectiveTc || 'none',
@@ -117,7 +117,7 @@ function joinRoom(ws, sessionId, name, roomId) {
   }
 
   // Randomly assign colors — 50/50 chance creator gets white or black
-  const joiner = { ws, sessionId, name: name || 'Joiner', connected: true, videoReady: false };
+  const joiner = { ws, sessionId, name: name || 'Opponent', connected: true, videoReady: false };
   const creator = room.white;
   if (Math.random() < 0.5) {
     room.white = joiner;
