@@ -67,6 +67,13 @@ function initDb() {
     // Index may already exist; ignore
   }
 
+  // Migration: normalize game results to chess notation
+  db.exec(`
+    UPDATE games SET result = '1-0' WHERE result = 'white';
+    UPDATE games SET result = '0-1' WHERE result = 'black';
+    UPDATE games SET result = '1/2-1/2' WHERE result = 'draw';
+  `);
+
   // --- User accounts tables ---
 
   db.exec(`
@@ -525,13 +532,13 @@ function listGamesByUser(userId, { limit = 15, offset = 0, category, result, opp
   const params = [userId, userId];
 
   if (result === 'win') {
-    where += ` AND ((g.white_user_id = ? AND g.result IN ('white', '1-0')) OR (g.black_user_id = ? AND g.result IN ('black', '0-1')))`;
+    where += ` AND ((g.white_user_id = ? AND g.result = '1-0') OR (g.black_user_id = ? AND g.result = '0-1'))`;
     params.push(userId, userId);
   } else if (result === 'loss') {
-    where += ` AND ((g.white_user_id = ? AND g.result IN ('black', '0-1')) OR (g.black_user_id = ? AND g.result IN ('white', '1-0')))`;
+    where += ` AND ((g.white_user_id = ? AND g.result = '0-1') OR (g.black_user_id = ? AND g.result = '1-0'))`;
     params.push(userId, userId);
   } else if (result === 'draw') {
-    where += ` AND g.result IN ('draw', '1/2-1/2')`;
+    where += ` AND g.result = '1/2-1/2'`;
   } else if (result === 'abandoned') {
     where += ` AND g.result = 'abandoned'`;
   } else if (result === 'ongoing') {
