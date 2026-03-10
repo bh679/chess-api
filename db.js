@@ -720,6 +720,15 @@ function getDiagnosticsBySession(sessionId, { category, limit, offset } = {}) {
   return db.prepare(sql).all(...params).map(formatDiagnosticEvent);
 }
 
+function getDiagnosticsRecent({ category, limit, offset } = {}) {
+  const row = db.prepare(
+    'SELECT game_id FROM diagnostic_events WHERE game_id IS NOT NULL ORDER BY game_id DESC LIMIT 1'
+  ).get();
+  if (!row) return { gameId: null, events: [], count: 0 };
+  const events = getDiagnosticsByGame(row.game_id, { category, limit, offset });
+  return { gameId: row.game_id, events, count: events.length };
+}
+
 function cleanupOldDiagnostics(maxAgeDays = 30) {
   const cutoff = Date.now() - (maxAgeDays * 24 * 60 * 60 * 1000);
   const info = db.prepare('DELETE FROM diagnostic_events WHERE created_at < ?').run(cutoff);
@@ -786,5 +795,6 @@ module.exports = {
   getDiagnosticsByGame,
   getDiagnosticsByRoom,
   getDiagnosticsBySession,
+  getDiagnosticsRecent,
   cleanupOldDiagnostics,
 };
