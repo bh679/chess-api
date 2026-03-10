@@ -6,9 +6,16 @@
  *
  * Two TURN credential modes are supported:
  *
- * 1. Static credentials (Open Relay / Metered.ca):
- *    TURN_URL, TURN_USERNAME, TURN_PASSWORD
- *    Use this for openrelay.metered.ca or any service with static creds.
+ * 1. Static credentials (Metered.ca / Open Relay):
+ *    TURN_URLS, TURN_USERNAME, TURN_PASSWORD
+ *
+ *    TURN_URLS is a comma-separated list of complete TURN URLs (including scheme
+ *    and any transport params), e.g.:
+ *      turn:global.relay.metered.ca:80,turn:global.relay.metered.ca:80?transport=tcp,turn:global.relay.metered.ca:443,turns:global.relay.metered.ca:443?transport=tcp
+ *
+ *    All URLs share the same username/credential.
+ *
+ *    TURN_URL (singular) is a legacy fallback — expands to turn:<URL> and turns:<URL>.
  *
  * 2. HMAC-SHA1 time-limited credentials (self-hosted coturn):
  *    TURN_URL, TURN_SECRET
@@ -28,19 +35,21 @@ const STUN_SERVERS = [
 
 // GET /api/chess/ice-servers — returns ICE server config for WebRTC
 router.get('/ice-servers', (req, res) => {
+  const turnUrls = process.env.TURN_URLS;
   const turnUrl = process.env.TURN_URL;
   const turnUsername = process.env.TURN_USERNAME;
   const turnPassword = process.env.TURN_PASSWORD;
   const turnSecret = process.env.TURN_SECRET;
 
-  if (!turnUrl) {
+  const hasTurnConfig = turnUrls || turnUrl;
+  if (!hasTurnConfig) {
     return res.json(STUN_SERVERS);
   }
 
   let username, credential;
 
   if (turnUsername && turnPassword) {
-    // Static credentials (Open Relay, Metered.ca, etc.)
+    // Static credentials (Metered.ca, Open Relay, etc.)
     username = turnUsername;
     credential = turnPassword;
   } else if (turnSecret) {
@@ -55,13 +64,19 @@ router.get('/ice-servers', (req, res) => {
     return res.json(STUN_SERVERS);
   }
 
+  // Build the list of TURN URLs.
+  // TURN_URLS: comma-separated complete URLs (recommended, e.g. from Metered dashboard).
+  // TURN_URL: legacy single base URL — expands to turn:<URL> and turns:<URL>.
+  let urls;
+  if (turnUrls) {
+    urls = turnUrls.split(',').map(u => u.trim()).filter(Boolean);
+  } else {
+    urls = [`turn:${turnUrl}`, `turns:${turnUrl}`];
+  }
+
   const servers = [
     ...STUN_SERVERS,
-    {
-      urls: [`turn:${turnUrl}`, `turns:${turnUrl}`],
-      username,
-      credential,
-    },
+    { urls, username, credential },
   ];
 
   res.json(servers);
