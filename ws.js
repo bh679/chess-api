@@ -138,6 +138,11 @@ function initWebSocket(server) {
           rooms.relaySignaling(sessionId, 'video_ended', {});
           break;
 
+        // Player name change — relay to opponent
+        case 'name_change':
+          rooms.relaySignaling(sessionId, 'name_change', { name: payload?.name });
+          break;
+
         // Shared post-game review
         case 'review_enter':
           rooms.handleReviewEnter(sessionId);
