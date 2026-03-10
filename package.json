@@ -1,6 +1,6 @@
 {
   "name": "chess-api",
-  "version": "1.11.0001",
+  "version": "1.11.0004"
   "private": true,
   "description": "REST API for chess game storage",
   "scripts": {
