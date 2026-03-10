@@ -5,6 +5,7 @@ const {
   getDiagnosticsByGame,
   getDiagnosticsByRoom,
   getDiagnosticsBySession,
+  getDiagnosticsRecent,
 } = require('../db');
 
 const MAX_BATCH_SIZE = 100;
@@ -91,6 +92,23 @@ router.get('/diagnostics/session/:id', (req, res) => {
     res.json({ sessionId, events, count: events.length });
   } catch (e) {
     console.error('GET /diagnostics/session/:id error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/chess/diagnostics/recent — diagnostics for the most recent game
+router.get('/diagnostics/recent', (req, res) => {
+  try {
+    const { category, limit = 500, offset = 0 } = req.query;
+    const result = getDiagnosticsRecent({
+      category: category || null,
+      limit: Math.min(parseInt(limit, 10) || 500, 1000),
+      offset: parseInt(offset, 10) || 0,
+    });
+    if (result.gameId === null) return res.status(404).json({ error: 'No game diagnostics found' });
+    res.json(result);
+  } catch (e) {
+    console.error('GET /diagnostics/recent error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
