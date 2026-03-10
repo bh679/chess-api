@@ -6,6 +6,7 @@ const CATEGORY_COLORS = {
   move:      '#22c55e',
   connection:'#f59e0b',
   sync:      '#8b5cf6',
+  webrtc:    '#06b6d4',
   unknown:   '#6b7280',
 };
 
@@ -57,6 +58,81 @@ function categoryLegend(events) {
   }).join('');
 }
 
+/**
+ * Compute WebRTC summary stats from a session's events.
+ * Returns null if no webrtc events exist for the session.
+ */
+function computeWebRtcSummary(events) {
+  const webrtcEvents = events.filter(e => e.category === 'webrtc');
+  if (webrtcEvents.length === 0) return null;
+
+  const summary = {
+    hasTurn: false,
+    serverCount: 0,
+    candidates: { host: 0, srflx: 0, relay: 0, prflx: 0, unknown: 0 },
+    iceState: null,
+    connectionState: null,
+    videoReceived: false,
+    audioReceived: false,
+  };
+
+  for (const e of webrtcEvents) {
+    const d = e.data || {};
+    if (e.eventType === 'ice_servers_config') {
+      summary.hasTurn = !!d.hasTurn;
+      summary.serverCount = d.count || 0;
+    } else if (e.eventType === 'ice_candidate_local') {
+      const t = d.type || 'unknown';
+      if (t in summary.candidates) summary.candidates[t]++;
+      else summary.candidates.unknown++;
+    } else if (e.eventType === 'ice_state_change') {
+      summary.iceState = d.state || d.iceState || null;
+    } else if (e.eventType === 'connection_state_change') {
+      summary.connectionState = d.state || d.connectionState || null;
+    } else if (e.eventType === 'remote_track_received') {
+      if (d.kind === 'video') summary.videoReceived = true;
+      if (d.kind === 'audio') summary.audioReceived = true;
+    }
+  }
+
+  return summary;
+}
+
+function renderWebRtcSummary(summary) {
+  if (!summary) return '';
+
+  const relayCount = summary.candidates.relay;
+  const turnOk = relayCount > 0;
+  const iceOk = summary.iceState === 'connected' || summary.iceState === 'completed';
+  const connOk = summary.connectionState === 'connected';
+
+  const turnLabel = summary.hasTurn
+    ? (turnOk
+        ? `<span class="wrtc-ok">TURN ✓ (${relayCount} relay)</span>`
+        : `<span class="wrtc-warn">TURN ⚠ (0 relay)</span>`)
+    : `<span class="wrtc-off">TURN off</span>`;
+
+  const iceLabel = summary.iceState
+    ? (iceOk
+        ? `<span class="wrtc-ok">ICE: ${escapeHtml(summary.iceState)}</span>`
+        : `<span class="wrtc-fail">ICE: ${escapeHtml(summary.iceState)}</span>`)
+    : '';
+
+  const connLabel = summary.connectionState
+    ? (connOk
+        ? `<span class="wrtc-ok">conn: ${escapeHtml(summary.connectionState)}</span>`
+        : `<span class="wrtc-fail">conn: ${escapeHtml(summary.connectionState)}</span>`)
+    : '';
+
+  const candidateLabel = `<span class="wrtc-dim">host:${summary.candidates.host} srflx:${summary.candidates.srflx} relay:${relayCount}</span>`;
+
+  const videoLabel = summary.videoReceived
+    ? `<span class="wrtc-ok">video ✓</span>`
+    : `<span class="wrtc-fail">video ✗</span>`;
+
+  return `<div class="webrtc-summary">${turnLabel} · ${iceLabel}${connLabel ? ' · ' + connLabel : ''} · ${candidateLabel} · ${videoLabel}</div>`;
+}
+
 function renderEventRow(e, baseTs) {
   const color = categoryColor(e.category);
   const dataStr = escapeHtml(JSON.stringify(e.data || {}, null, 2));
@@ -85,6 +161,8 @@ function renderSessionSection(sessionId, events) {
     .map(([c, n]) => `<span class="badge sm" style="background:${categoryColor(c)}">${n} ${escapeHtml(c)}</span>`)
     .join(' ');
 
+  const webRtcSummary = renderWebRtcSummary(computeWebRtcSummary(events));
+
   return `<details class="session-section" open>
   <summary class="session-header">
     <div class="session-device">
@@ -98,6 +176,7 @@ function renderSessionSection(sessionId, events) {
       <span class="session-id" title="${escapeHtml(sessionId)}">${escapeHtml(shortId)}…</span>
     </div>
   </summary>
+  ${webRtcSummary}
   <div class="session-events">
     ${events.map(e => renderEventRow(e, baseTs)).join('\n')}
   </div>
@@ -163,6 +242,14 @@ function renderDiagnosticsHTML(result, context) {
   .device-screen { color: #475569; font-size: 11px; }
   .session-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
   .session-id { color: #475569; font-size: 11px; }
+
+  /* WebRTC summary bar */
+  .webrtc-summary { padding: 6px 16px; background: #0f172a; border-bottom: 1px solid #1e293b; font-size: 11px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .wrtc-ok   { color: #4ade80; font-weight: 600; }
+  .wrtc-warn { color: #fb923c; font-weight: 600; }
+  .wrtc-fail { color: #f87171; font-weight: 600; }
+  .wrtc-off  { color: #475569; }
+  .wrtc-dim  { color: #64748b; }
 
   /* Events */
   .session-events { padding: 0 16px 12px; display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
