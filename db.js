@@ -176,6 +176,28 @@ function initDb() {
     db.exec(`ALTER TABLE users ADD COLUMN password_hash TEXT`);
   } catch (e) { /* column already exists */ }
 
+  // --- Diagnostics table ---
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS diagnostic_events (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      game_id         INTEGER REFERENCES games(id) ON DELETE SET NULL,
+      room_code       TEXT,
+      session_id      TEXT NOT NULL,
+      timestamp       INTEGER NOT NULL,
+      category        TEXT NOT NULL,
+      event_type      TEXT NOT NULL,
+      data            TEXT NOT NULL DEFAULT '{}',
+      device_info     TEXT NOT NULL DEFAULT '{}',
+      created_at      INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_diag_game_id ON diagnostic_events(game_id);
+    CREATE INDEX IF NOT EXISTS idx_diag_room_code ON diagnostic_events(room_code);
+    CREATE INDEX IF NOT EXISTS idx_diag_session_id ON diagnostic_events(session_id);
+    CREATE INDEX IF NOT EXISTS idx_diag_category ON diagnostic_events(category);
+    CREATE INDEX IF NOT EXISTS idx_diag_created_at ON diagnostic_events(created_at);
+  `);
+
   return db;
 }
 
@@ -639,6 +661,88 @@ function getUserWithPassword(username) {
   return db.prepare('SELECT * FROM users WHERE username = ?').get(username);
 }
 
+// --- Diagnostic helpers ---
+
+function insertDiagnosticEvents(events) {
+  const stmt = db.prepare(`
+    INSERT INTO diagnostic_events
+      (game_id, room_code, session_id, timestamp, category, event_type, data, device_info, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertMany = db.transaction((evts) => {
+    const now = Date.now();
+    for (const evt of evts) {
+      stmt.run(
+        evt.gameId, evt.roomCode, evt.sessionId,
+        evt.timestamp, evt.category, evt.eventType,
+        evt.data, evt.deviceInfo, now
+      );
+    }
+  });
+
+  insertMany(events);
+}
+
+function getDiagnosticsByGame(gameId, { category, limit, offset } = {}) {
+  let sql = 'SELECT * FROM diagnostic_events WHERE game_id = ?';
+  const params = [gameId];
+  if (category) {
+    sql += ' AND category = ?';
+    params.push(category);
+  }
+  sql += ' ORDER BY timestamp ASC LIMIT ? OFFSET ?';
+  params.push(limit || 500, offset || 0);
+  return db.prepare(sql).all(...params).map(formatDiagnosticEvent);
+}
+
+function getDiagnosticsByRoom(roomCode, { category, limit, offset } = {}) {
+  let sql = 'SELECT * FROM diagnostic_events WHERE room_code = ?';
+  const params = [roomCode];
+  if (category) {
+    sql += ' AND category = ?';
+    params.push(category);
+  }
+  sql += ' ORDER BY timestamp ASC LIMIT ? OFFSET ?';
+  params.push(limit || 500, offset || 0);
+  return db.prepare(sql).all(...params).map(formatDiagnosticEvent);
+}
+
+function getDiagnosticsBySession(sessionId, { category, limit, offset } = {}) {
+  let sql = 'SELECT * FROM diagnostic_events WHERE session_id = ?';
+  const params = [sessionId];
+  if (category) {
+    sql += ' AND category = ?';
+    params.push(category);
+  }
+  sql += ' ORDER BY timestamp ASC LIMIT ? OFFSET ?';
+  params.push(limit || 500, offset || 0);
+  return db.prepare(sql).all(...params).map(formatDiagnosticEvent);
+}
+
+function cleanupOldDiagnostics(maxAgeDays = 30) {
+  const cutoff = Date.now() - (maxAgeDays * 24 * 60 * 60 * 1000);
+  const info = db.prepare('DELETE FROM diagnostic_events WHERE created_at < ?').run(cutoff);
+  if (info.changes > 0) {
+    console.log(`[Diagnostics] Cleaned up ${info.changes} old events`);
+  }
+}
+
+function formatDiagnosticEvent(row) {
+  return {
+    id: row.id,
+    gameId: row.game_id,
+    roomCode: row.room_code,
+    sessionId: row.session_id,
+    timestamp: row.timestamp,
+    category: row.category,
+    eventType: row.event_type,
+    data: JSON.parse(row.data || '{}'),
+    deviceInfo: JSON.parse(row.device_info || '{}'),
+    createdAt: row.created_at,
+  };
+}
+
 module.exports = {
   initDb,
   getDb,
@@ -676,5 +780,11 @@ module.exports = {
   updateSettings,
   // Game by user helpers
   listGamesByUser,
-  claimGame
+  claimGame,
+  // Diagnostic helpers
+  insertDiagnosticEvents,
+  getDiagnosticsByGame,
+  getDiagnosticsByRoom,
+  getDiagnosticsBySession,
+  cleanupOldDiagnostics,
 };

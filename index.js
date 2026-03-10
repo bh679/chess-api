@@ -10,8 +10,10 @@ const settingsRouter = require('./routes/settings');
 const gameHistoryRouter = require('./routes/game-history');
 const roomsRouter = require('./routes/rooms');
 const iceServersRouter = require('./routes/ice-servers');
+const diagnosticsRouter = require('./routes/diagnostics');
 const { initWebSocket } = require('./ws');
 const { version } = require('./package.json');
+const { cleanupOldDiagnostics } = require('./db');
 
 // Initialize database
 initDb();
@@ -48,6 +50,7 @@ app.use('/api/chess', settingsRouter);
 app.use('/api/chess', gameHistoryRouter);
 app.use('/api/chess', roomsRouter);
 app.use('/api/chess', iceServersRouter);
+app.use('/api/chess', diagnosticsRouter);
 
 // SPA catch-all: serve index.html for non-API, non-static paths
 // This allows path-based URLs (/replay, /games) to load the app,
@@ -64,6 +67,10 @@ app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
+
+// Clean up old diagnostic events (30 days) on startup and daily
+cleanupOldDiagnostics();
+setInterval(() => cleanupOldDiagnostics(), 24 * 60 * 60 * 1000);
 
 const PORT = process.env.PORT || 3002;
 const server = http.createServer(app);
