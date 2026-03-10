@@ -147,6 +147,7 @@ function joinRoom(ws, sessionId, name, roomId) {
     fen: room.chess.fen(),
     timeControl: room.timeControl,
     chess960: room.chess960,
+    dbGameId: room.dbGameId,
   };
 
   send(room.white.ws, 'game_start', { ...startPayload, color: 'w', opponentName: room.black.name, videoEnabled: room.videoEnabled });
@@ -359,6 +360,7 @@ function handleRematchResponse(sessionId, accept) {
     fen: room.chess.fen(),
     timeControl: room.timeControl,
     chess960: room.chess960,
+    dbGameId: room.dbGameId,
   };
 
   send(room.white.ws, 'rematch_start', { ...startPayload, color: 'w', opponentName: room.black.name });
@@ -444,6 +446,7 @@ function attemptReconnect(ws, sessionId, room) {
     opponentConnected: getPlayerBySide(room, side === 'w' ? 'b' : 'w').connected,
     videoEnabled: room.videoEnabled,
     chess960: room.chess960,
+    dbGameId: room.dbGameId,
   });
 
   // Notify opponent
