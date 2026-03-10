@@ -40,14 +40,13 @@ function initWebSocket(server) {
 
         // Check for existing room to reconnect
         const existingRoom = rooms.getRoomForSession(sessionId);
-        if (existingRoom && existingRoom.status === 'playing') {
-          rooms.joinRoom(ws, sessionId, null, existingRoom.id);
-        } else if (existingRoom && existingRoom.status === 'waiting') {
-          // Reconnect to waiting room (updates ws reference)
-          rooms.joinRoom(ws, sessionId, null, existingRoom.id);
+        let reconnected = false;
+        if (existingRoom && (existingRoom.status === 'playing' || existingRoom.status === 'waiting')) {
+          const joinResult = rooms.joinRoom(ws, sessionId, null, existingRoom.id);
+          reconnected = !!joinResult;
         }
 
-        send(ws, 'auth_ok', {});
+        send(ws, 'auth_ok', { inRoom: reconnected, roomId: reconnected ? existingRoom.id : null });
 
         // Auto-send rooms list on connect
         const userRooms = rooms.listRoomsForSession(sessionId);
@@ -165,6 +164,11 @@ function initWebSocket(server) {
 
         case 'review_exit':
           rooms.handleReviewExit(sessionId);
+          break;
+
+        // Application-level heartbeat
+        case 'ping':
+          send(ws, 'pong', { ts: payload?.ts });
           break;
 
         default:
