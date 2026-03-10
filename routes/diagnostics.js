@@ -7,6 +7,7 @@ const {
   getDiagnosticsBySession,
   getDiagnosticsRecent,
 } = require('../db');
+const { renderDiagnosticsHTML } = require('./diagnostics-html');
 
 const MAX_BATCH_SIZE = 100;
 
@@ -52,8 +53,10 @@ router.get('/diagnostics/game/:id', (req, res) => {
       limit: Math.min(parseInt(limit, 10) || 500, 1000),
       offset: parseInt(offset, 10) || 0,
     });
+    const result = { gameId, events, count: events.length };
 
-    res.json({ gameId, events, count: events.length });
+    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Game ${gameId}`));
+    res.json(result);
   } catch (e) {
     console.error('GET /diagnostics/game/:id error:', e.message);
     res.status(500).json({ error: e.message });
@@ -70,8 +73,10 @@ router.get('/diagnostics/room/:code', (req, res) => {
       limit: Math.min(parseInt(limit, 10) || 500, 1000),
       offset: parseInt(offset, 10) || 0,
     });
+    const result = { roomCode, events, count: events.length };
 
-    res.json({ roomCode, events, count: events.length });
+    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Room ${roomCode}`));
+    res.json(result);
   } catch (e) {
     console.error('GET /diagnostics/room/:code error:', e.message);
     res.status(500).json({ error: e.message });
@@ -88,8 +93,10 @@ router.get('/diagnostics/session/:id', (req, res) => {
       limit: Math.min(parseInt(limit, 10) || 500, 1000),
       offset: parseInt(offset, 10) || 0,
     });
+    const result = { sessionId, events, count: events.length };
 
-    res.json({ sessionId, events, count: events.length });
+    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Session ${sessionId.slice(0, 8)}…`));
+    res.json(result);
   } catch (e) {
     console.error('GET /diagnostics/session/:id error:', e.message);
     res.status(500).json({ error: e.message });
@@ -106,6 +113,8 @@ router.get('/diagnostics/recent', (req, res) => {
       offset: parseInt(offset, 10) || 0,
     });
     if (result.gameId === null) return res.status(404).json({ error: 'No game diagnostics found' });
+
+    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Recent game (ID ${result.gameId})`));
     res.json(result);
   } catch (e) {
     console.error('GET /diagnostics/recent error:', e.message);
