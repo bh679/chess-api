@@ -102,6 +102,9 @@ function joinRoom(ws, sessionId, name, roomId) {
     if (room.status === 'playing') {
       return attemptReconnect(ws, sessionId, room);
     }
+    if (room.status === 'lobby') {
+      return attemptLobbyReconnect(ws, sessionId, room);
+    }
     send(ws, 'error', { message: 'Room is not accepting players' });
     return null;
   }
@@ -126,10 +129,141 @@ function joinRoom(ws, sessionId, name, roomId) {
   } else {
     room.black = joiner;
   }
-  room.status = 'playing';
+  room.status = 'lobby';
+  room.ready = { w: false, b: false };
+  room.pendingChange = null;
   sessionRooms.set(sessionId, roomId);
 
-  // Create database game record
+  const lobbyPayload = {
+    roomId: room.id,
+    settings: { timeControl: room.timeControl, chess960: room.chess960, videoEnabled: room.videoEnabled },
+    white: { name: room.white.name, ready: false },
+    black: { name: room.black.name, ready: false },
+  };
+
+  send(room.white.ws, 'lobby_joined', { ...lobbyPayload, color: 'w', opponentName: room.black.name });
+  send(room.black.ws, 'lobby_joined', { ...lobbyPayload, color: 'b', opponentName: room.white.name });
+
+  return room;
+}
+
+function handleSettingChange(sessionId, field, value) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || room.status !== 'lobby') return;
+
+  const validFields = ['timeControl', 'chess960', 'colorSwap'];
+  if (!validFields.includes(field)) return;
+
+  if (room.pendingChange) {
+    send(getPlayerBySide(room, getPlayerSide(room, sessionId))?.ws, 'error', { message: 'A change is already pending' });
+    return;
+  }
+
+  const side = getPlayerSide(room, sessionId);
+  if (!side) return;
+
+  const changeId = Math.random().toString(36).slice(2, 10);
+  room.pendingChange = { id: changeId, field, value, proposedBy: side };
+
+  const proposer = getPlayerBySide(room, side);
+  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+
+  send(proposer.ws, 'setting_pending', { changeId, field, value });
+  send(opponent?.ws, 'setting_proposed', { changeId, field, value, proposedBy: side });
+}
+
+function handleSettingResponse(sessionId, changeId, accept) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || room.status !== 'lobby') return;
+  if (!room.pendingChange || room.pendingChange.id !== changeId) return;
+
+  const responderSide = getPlayerSide(room, sessionId);
+  if (!responderSide || responderSide === room.pendingChange.proposedBy) return;
+
+  const { field, value } = room.pendingChange;
+  room.pendingChange = null;
+
+  if (accept) {
+    // Apply the change
+    if (field === 'timeControl') {
+      room.timeControl = value;
+      const tc = parseTimeControl(value);
+      if (tc) {
+        const timeMs = tc.minutes * 60 * 1000;
+        room.clocks = { w: timeMs, b: timeMs, increment: tc.increment * 1000, lastMoveAt: null };
+      } else {
+        room.clocks = null;
+      }
+    } else if (field === 'chess960') {
+      room.chess960 = !!value;
+      if (room.chess960) {
+        const newFen = generateChess960FEN();
+        room.chess = new Chess(newFen);
+        room.startingFen = newFen;
+      } else {
+        room.chess = new Chess();
+        room.startingFen = null;
+      }
+    } else if (field === 'colorSwap') {
+      const oldWhite = room.white;
+      const oldBlack = room.black;
+      room.white = { ...oldBlack };
+      room.black = { ...oldWhite };
+    }
+
+    // Reset ready states after any accepted change
+    room.ready = { w: false, b: false };
+
+    const updatedSettings = {
+      timeControl: room.timeControl,
+      chess960: room.chess960,
+      videoEnabled: room.videoEnabled,
+    };
+
+    send(room.white.ws, 'setting_resolved', {
+      changeId, field, accepted: true, settings: updatedSettings,
+      ready: { w: false, b: false },
+      color: 'w',
+    });
+    send(room.black.ws, 'setting_resolved', {
+      changeId, field, accepted: true, settings: updatedSettings,
+      ready: { w: false, b: false },
+      color: 'b',
+    });
+  } else {
+    send(room.white.ws, 'setting_resolved', { changeId, field, accepted: false });
+    send(room.black.ws, 'setting_resolved', { changeId, field, accepted: false });
+  }
+}
+
+function handlePlayerReady(sessionId, ready) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || room.status !== 'lobby') return;
+
+  if (room.pendingChange) return; // Block readying while a change is pending
+
+  const side = getPlayerSide(room, sessionId);
+  if (!side) return;
+
+  room.ready[side] = ready;
+
+  send(room.white.ws, 'ready_state', { w: room.ready.w, b: room.ready.b });
+  send(room.black.ws, 'ready_state', { w: room.ready.w, b: room.ready.b });
+
+  if (room.ready.w && room.ready.b) {
+    startGameFromLobby(room);
+  }
+}
+
+function startGameFromLobby(room) {
+  room.status = 'playing';
+
   room.dbGameId = createGame({
     gameType: 'multiplayer',
     timeControl: room.timeControl,
@@ -138,7 +272,6 @@ function joinRoom(ws, sessionId, name, roomId) {
     black: { name: room.black.name, isAI: false, elo: null, engineId: null },
   });
 
-  // Start clock if timed
   if (room.clocks) {
     room.clocks.lastMoveAt = Date.now();
   }
@@ -153,6 +286,39 @@ function joinRoom(ws, sessionId, name, roomId) {
 
   send(room.white.ws, 'game_start', { ...startPayload, color: 'w', opponentName: room.black.name, videoEnabled: room.videoEnabled });
   send(room.black.ws, 'game_start', { ...startPayload, color: 'b', opponentName: room.white.name, videoEnabled: room.videoEnabled });
+}
+
+function attemptLobbyReconnect(ws, sessionId, room) {
+  const side = getPlayerSide(room, sessionId);
+  if (!side) {
+    send(ws, 'error', { message: 'You are not a player in this room' });
+    return null;
+  }
+
+  const player = getPlayerBySide(room, side);
+  player.ws = ws;
+  player.connected = true;
+  player.disconnectedAt = null;
+
+  sessionRooms.set(sessionId, room.id);
+
+  if (room.disconnectTimer) {
+    clearTimeout(room.disconnectTimer);
+    room.disconnectTimer = null;
+  }
+
+  const lobbyPayload = {
+    roomId: room.id,
+    settings: { timeControl: room.timeControl, chess960: room.chess960, videoEnabled: room.videoEnabled },
+    white: { name: room.white.name, ready: room.ready.w },
+    black: { name: room.black.name, ready: room.ready.b },
+  };
+  send(ws, 'lobby_joined', { ...lobbyPayload, color: side, opponentName: getPlayerBySide(room, side === 'w' ? 'b' : 'w').name });
+
+  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+  if (opponent && opponent.ws) {
+    send(opponent.ws, 'opponent_reconnected', {});
+  }
 
   return room;
 }
@@ -396,6 +562,23 @@ function handleDisconnect(sessionId) {
     return;
   }
 
+  if (room.status === 'lobby') {
+    // Keep lobby alive — same grace period as waiting
+    if (!room.disconnectTimer) {
+      room.disconnectTimer = setTimeout(() => {
+        const r = rooms.get(roomId);
+        if (r && r.status === 'lobby') {
+          cleanupRoom(roomId);
+        }
+      }, DISCONNECT_GRACE_PERIOD);
+    }
+    const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+    if (opponent && opponent.ws) {
+      send(opponent.ws, 'opponent_disconnected', { timeout: DISCONNECT_GRACE_PERIOD / 1000 });
+    }
+    return;
+  }
+
   // Notify opponent
   const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
   if (opponent && opponent.ws) {
@@ -543,7 +726,7 @@ function getRoomForSession(sessionId) {
  */
 function findRoomBySession(sessionId) {
   for (const room of rooms.values()) {
-    if (room.status !== 'playing' && room.status !== 'waiting') continue;
+    if (room.status !== 'playing' && room.status !== 'waiting' && room.status !== 'lobby') continue;
     if (room.white?.sessionId === sessionId || room.black?.sessionId === sessionId) {
       sessionRooms.set(sessionId, room.id);
       return room;
@@ -565,7 +748,7 @@ function listRoomsForSession(sessionId) {
   for (const room of rooms.values()) {
     const side = getPlayerSide(room, sessionId);
     if (!side) continue;
-    if (room.status !== 'waiting' && room.status !== 'playing') continue;
+    if (room.status !== 'waiting' && room.status !== 'playing' && room.status !== 'lobby') continue;
     result.push({
       roomId: room.id,
       status: room.status,
@@ -745,6 +928,9 @@ function handleReviewExit(sessionId) {
 module.exports = {
   createRoom,
   joinRoom,
+  handleSettingChange,
+  handleSettingResponse,
+  handlePlayerReady,
   makeMove,
   handleResign,
   handleDrawOffer,

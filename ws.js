@@ -45,7 +45,7 @@ function initWebSocket(server) {
           existingRoom = rooms.findRoomBySession(sessionId);
         }
         let reconnected = false;
-        if (existingRoom && (existingRoom.status === 'playing' || existingRoom.status === 'waiting')) {
+        if (existingRoom && (existingRoom.status === 'playing' || existingRoom.status === 'waiting' || existingRoom.status === 'lobby')) {
           const joinResult = rooms.joinRoom(ws, sessionId, null, existingRoom.id);
           reconnected = !!joinResult;
         }
@@ -173,6 +173,19 @@ function initWebSocket(server) {
 
         case 'review_exit':
           rooms.handleReviewExit(sessionId);
+          break;
+
+        // Lobby — pre-game settings negotiation
+        case 'setting_change':
+          rooms.handleSettingChange(sessionId, payload?.field, payload?.value);
+          break;
+
+        case 'setting_respond':
+          rooms.handleSettingResponse(sessionId, payload?.changeId, !!payload?.accept);
+          break;
+
+        case 'player_ready':
+          rooms.handlePlayerReady(sessionId, payload?.ready !== false);
           break;
 
         // Application-level heartbeat
