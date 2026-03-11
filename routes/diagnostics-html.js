@@ -89,11 +89,15 @@ function groupBySession(events) {
     .sort((a, b) => (a[1][0].timestamp || 0) - (b[1][0].timestamp || 0));
 }
 
-function categoryLegend(events) {
-  const cats = [...new Set(events.map(e => e.category || 'unknown'))];
-  return cats.map(cat => {
+function categoryFilterBar(events) {
+  const catCounts = events.reduce((acc, e) => {
+    const c = e.category || 'unknown';
+    acc[c] = (acc[c] || 0) + 1;
+    return acc;
+  }, {});
+  return Object.entries(catCounts).map(([cat, n]) => {
     const color = categoryColor(cat);
-    return `<span class="legend-item"><span class="legend-dot" style="background:${color}"></span>${escapeHtml(cat)}</span>`;
+    return `<button class="pill-filter active" data-cat="${escapeHtml(cat)}" style="--pill-border:${color};--pill-bg:${color}18;--pill-text:${color}">${n} ${escapeHtml(cat)}</button>`;
   }).join('');
 }
 
@@ -176,12 +180,13 @@ function renderEventRow(e, baseTs) {
   const color = categoryColor(e.category);
   const dataStr = escapeHtml(JSON.stringify(e.data || {}, null, 2));
   const rel = baseTs ? formatRelativeMs(baseTs, e.timestamp) : '';
-  return `<div class="event-row">
+  const cat = escapeHtml(e.category || 'unknown');
+  return `<div class="event-row" data-cat="${cat}">
     <div class="event-time">
       <span class="ts-abs">${formatTs(e.timestamp)}</span>
       ${rel ? `<span class="ts-rel">${escapeHtml(rel)}</span>` : ''}
     </div>
-    <span class="badge" style="background:${color}">${escapeHtml(e.category || 'unknown')}</span>
+    <span class="badge" style="background:${color}">${cat}</span>
     <span class="event-type">${escapeHtml(e.eventType || '—')}</span>
     <details class="data-detail"><summary>data</summary><pre>${dataStr}</pre></details>
   </div>`;
@@ -219,6 +224,51 @@ function renderSessionSection(sessionId, events) {
   <div class="session-events">
     ${events.map(e => renderEventRow(e, baseTs)).join('\n')}
   </div>
+</details>`;
+}
+
+function renderMovesSection(game) {
+  if (!game || !game.moves || game.moves.length === 0) return '';
+
+  const { white, black, timeControl, result, resultReason, moves } = game;
+  const whiteName = escapeHtml(white && white.name ? white.name : '?');
+  const blackName = escapeHtml(black && black.name ? black.name : '?');
+  const whiteAI = white && white.isAI ? ' (AI)' : '';
+  const blackAI = black && black.isAI ? ' (AI)' : '';
+  const tc = timeControl ? escapeHtml(JSON.stringify(timeControl)) : '—';
+  const resultStr = result ? `${escapeHtml(result)}${resultReason ? ' · ' + escapeHtml(resultReason) : ''}` : 'In progress';
+
+  // Pair moves into rows: [white, black]
+  const rows = [];
+  for (let i = 0; i < moves.length; i += 2) {
+    rows.push({ num: Math.floor(i / 2) + 1, white: moves[i], black: moves[i + 1] || null });
+  }
+
+  const tableRows = rows.map(r => {
+    const wTs = r.white.timestamp ? `<span class="move-ts">${formatTs(r.white.timestamp)}</span>` : '';
+    const bTs = r.black && r.black.timestamp ? `<span class="move-ts">${formatTs(r.black.timestamp)}</span>` : '';
+    const bSan = r.black ? `<span class="move-black">${escapeHtml(r.black.san)}</span> ${bTs}` : '';
+    return `<tr>
+      <td class="move-num">${r.num}.</td>
+      <td><span class="move-white">${escapeHtml(r.white.san)}</span> ${wTs}</td>
+      <td>${bSan}</td>
+    </tr>`;
+  }).join('');
+
+  return `<details class="moves-panel">
+  <summary>
+    <span>Game Moves — ${moves.length} ply</span>
+    <span style="color:#475569;font-weight:400;text-transform:none;letter-spacing:0">${resultStr}</span>
+  </summary>
+  <div class="moves-meta">
+    <span>♙ <span class="moves-meta-val">${whiteName}${whiteAI}</span></span>
+    <span>♟ <span class="moves-meta-val">${blackName}${blackAI}</span></span>
+    <span>Time control: <span class="moves-meta-val">${tc}</span></span>
+  </div>
+  <table class="moves-table">
+    <thead><tr><th>#</th><th>White</th><th>Black</th></tr></thead>
+    <tbody>${tableRows}</tbody>
+  </table>
 </details>`;
 }
 
@@ -265,7 +315,7 @@ function renderGamesNav(recentGames, currentGameId) {
 ${legend}`;
 }
 
-function renderDiagnosticsHTML(result, context, recentGames = []) {
+function renderDiagnosticsHTML(result, context, recentGames = [], game = null) {
   const { events = [], count = 0 } = result;
   const ctxLabel = context || `Game ${result.gameId}`;
   const firstTs = events.length ? events[0].timestamp : null;
@@ -310,10 +360,31 @@ function renderDiagnosticsHTML(result, context, recentGames = []) {
   .pill-legend { padding: 4px 24px 8px; display: flex; gap: 14px; flex-wrap: wrap; border-bottom: 1px solid #1e293b; }
   .pill-legend-item { font-size: 10px; white-space: nowrap; }
 
-  /* Legend */
-  .legend { padding: 8px 24px 12px; display: flex; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid #1e293b; }
-  .legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #94a3b8; }
-  .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  /* Filter bar (replaces legend) */
+  .filter-bar { padding: 8px 24px 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; border-bottom: 1px solid #1e293b; }
+  .filter-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #475569; white-space: nowrap; }
+  .pill-filter { background: #1e293b; border: 1px solid #334155; color: #94a3b8; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity .15s; }
+  .pill-filter.active { border-color: var(--pill-border, #3b82f6); background: var(--pill-bg, #0c1f40); color: var(--pill-text, #60a5fa); }
+  .pill-filter:not(.active) { opacity: 0.45; }
+  .pill-filter:hover { opacity: 1; border-color: #475569; }
+
+  /* Moves panel */
+  .moves-panel { margin: 12px 24px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; overflow: hidden; }
+  .moves-panel summary { padding: 10px 16px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; list-style: none; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #64748b; }
+  .moves-panel summary::-webkit-details-marker { display: none; }
+  .moves-panel summary:hover { background: #243147; color: #94a3b8; }
+  .moves-panel[open] summary { border-bottom: 1px solid #334155; color: #94a3b8; }
+  .moves-meta { padding: 8px 16px; font-size: 11px; color: #64748b; border-bottom: 1px solid #1e293b; display: flex; gap: 16px; flex-wrap: wrap; }
+  .moves-meta-val { color: #e2e8f0; }
+  .moves-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .moves-table th { color: #475569; text-align: left; padding: 4px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid #334155; }
+  .moves-table td { padding: 4px 12px; border-bottom: 1px solid #0f172a; }
+  .moves-table tr:last-child td { border-bottom: none; }
+  .moves-table tr:hover td { background: #1a2740; }
+  .move-num { color: #475569; width: 36px; }
+  .move-white { color: #f1f5f9; font-weight: 600; }
+  .move-black { color: #94a3b8; }
+  .move-ts { color: #475569; font-size: 10px; white-space: nowrap; }
 
   /* Sessions */
   .sessions { padding: 16px 24px; display: flex; flex-direction: column; gap: 16px; }
@@ -389,7 +460,9 @@ function renderDiagnosticsHTML(result, context, recentGames = []) {
 
 ${renderGamesNav(recentGames, result.gameId)}
 
-${events.length > 0 ? `<div class="legend">${categoryLegend(events)}</div>` : ''}
+${events.length > 0 ? `<div class="filter-bar"><span class="filter-label">Show</span>${categoryFilterBar(events)}</div>` : ''}
+
+${renderMovesSection(game)}
 
 <div class="sessions">
   ${events.length === 0
@@ -427,6 +500,23 @@ function copyJson() {
     btn.textContent = 'Copy failed';
   });
 }
+
+// Category filter pills
+var _hiddenCats = new Set();
+document.querySelectorAll('.pill-filter[data-cat]').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var cat = btn.dataset.cat;
+    if (_hiddenCats.has(cat)) {
+      _hiddenCats.delete(cat);
+      document.querySelectorAll('.pill-filter[data-cat="' + cat + '"]').forEach(function(b) { b.classList.add('active'); });
+      document.querySelectorAll('.event-row[data-cat="' + cat + '"]').forEach(function(r) { r.style.display = ''; });
+    } else {
+      _hiddenCats.add(cat);
+      document.querySelectorAll('.pill-filter[data-cat="' + cat + '"]').forEach(function(b) { b.classList.remove('active'); });
+      document.querySelectorAll('.event-row[data-cat="' + cat + '"]').forEach(function(r) { r.style.display = 'none'; });
+    }
+  });
+});
 </script>
 </body>
 </html>`;
