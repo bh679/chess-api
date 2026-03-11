@@ -95,6 +95,7 @@ function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
     cleanupTimer: null,
     videoEnabled: !!videoEnabled,
     chess960: is960,
+    creatorSessionId: sessionId,
   };
 
   rooms.set(roomId, room);
@@ -141,6 +142,16 @@ function joinRoom(ws, sessionId, name, roomId) {
   }
   room.status = 'playing';
   sessionRooms.set(sessionId, roomId);
+
+  // For odds TC: if creator ended up as black, swap clocks and TC string so
+  // white/black values correctly reflect each player's actual starting time
+  const oddsMatch = room.timeControl.match(/^(\d+)\/(\d+)\+(\d+)$/);
+  if (oddsMatch && room.clocks && room.black.sessionId === room.creatorSessionId) {
+    const temp = room.clocks.w;
+    room.clocks.w = room.clocks.b;
+    room.clocks.b = temp;
+    room.timeControl = `${oddsMatch[2]}/${oddsMatch[1]}+${oddsMatch[3]}`;
+  }
 
   // Create database game record
   room.dbGameId = createGame({
