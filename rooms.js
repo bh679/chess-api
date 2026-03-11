@@ -51,10 +51,22 @@ function generateChess960FEN() {
 
 function parseTimeControl(tc) {
   if (!tc || tc === 'none') return null;
-  // Format: "5+0", "10+5", "3+2", etc.
-  const match = tc.match(/^(\d+)\+(\d+)$/);
-  if (!match) return null;
-  return { minutes: parseInt(match[1], 10), increment: parseInt(match[2], 10) };
+  // Symmetric format: "5+0", "10+5", "3+2", etc.
+  const symMatch = tc.match(/^(\d+)\+(\d+)$/);
+  if (symMatch) {
+    const min = parseInt(symMatch[1], 10);
+    return { whiteMinutes: min, blackMinutes: min, increment: parseInt(symMatch[2], 10) };
+  }
+  // Asymmetric/odds format: "10/5+3" (white 10 min, black 5 min, 3 sec increment)
+  const oddsMatch = tc.match(/^(\d+)\/(\d+)\+(\d+)$/);
+  if (oddsMatch) {
+    return {
+      whiteMinutes: parseInt(oddsMatch[1], 10),
+      blackMinutes: parseInt(oddsMatch[2], 10),
+      increment:    parseInt(oddsMatch[3], 10),
+    };
+  }
+  return null;
 }
 
 function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
@@ -62,7 +74,8 @@ function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
   // "any" defaults to 5+0 for room creation
   const effectiveTc = timeControl === 'any' ? '5+0' : timeControl;
   const tc = parseTimeControl(effectiveTc);
-  const timeMs = tc ? tc.minutes * 60 * 1000 : 0;
+  const whiteMsBase = tc ? tc.whiteMinutes * 60 * 1000 : 0;
+  const blackMsBase = tc ? tc.blackMinutes * 60 * 1000 : 0;
 
   const is960 = !!chess960;
   const startFen = is960 ? generateChess960FEN() : undefined;
@@ -74,7 +87,7 @@ function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
     chess: startFen ? new Chess(startFen) : new Chess(),
     startingFen: startFen || null,
     timeControl: effectiveTc || 'none',
-    clocks: tc ? { w: timeMs, b: timeMs, increment: tc.increment * 1000, lastMoveAt: null } : null,
+    clocks: tc ? { w: whiteMsBase, b: blackMsBase, increment: tc.increment * 1000, lastMoveAt: null } : null,
     moves: [],
     status: 'waiting',
     dbGameId: null,
@@ -82,6 +95,7 @@ function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
     cleanupTimer: null,
     videoEnabled: !!videoEnabled,
     chess960: is960,
+    creatorSessionId: sessionId,
   };
 
   rooms.set(roomId, room);
@@ -101,6 +115,9 @@ function joinRoom(ws, sessionId, name, roomId) {
     // Check for reconnection
     if (room.status === 'playing') {
       return attemptReconnect(ws, sessionId, room);
+    }
+    if (room.status === 'lobby') {
+      return attemptLobbyReconnect(ws, sessionId, room);
     }
     send(ws, 'error', { message: 'Room is not accepting players' });
     return null;
@@ -126,8 +143,105 @@ function joinRoom(ws, sessionId, name, roomId) {
   } else {
     room.black = joiner;
   }
-  room.status = 'playing';
+  room.status = 'lobby';
+  room.ready = { w: false, b: false };
   sessionRooms.set(sessionId, roomId);
+
+  const lobbyPayload = {
+    roomId: room.id,
+    settings: { timeControl: room.timeControl, chess960: room.chess960, videoEnabled: room.videoEnabled },
+    white: { name: room.white.name, ready: false },
+    black: { name: room.black.name, ready: false },
+  };
+
+  send(room.white.ws, 'lobby_joined', { ...lobbyPayload, color: 'w', opponentName: room.black.name });
+  send(room.black.ws, 'lobby_joined', { ...lobbyPayload, color: 'b', opponentName: room.white.name });
+
+  return room;
+}
+
+function handleSettingChange(sessionId, field, value) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || room.status !== 'lobby') return;
+
+  const validFields = ['timeControl', 'chess960', 'colorSwap'];
+  if (!validFields.includes(field)) return;
+
+  const side = getPlayerSide(room, sessionId);
+  if (!side) return;
+
+  // Apply the change immediately
+  if (field === 'timeControl') {
+    room.timeControl = value;
+    const tc = parseTimeControl(value);
+    if (tc) {
+      room.clocks = { w: tc.whiteMinutes * 60 * 1000, b: tc.blackMinutes * 60 * 1000, increment: tc.increment * 1000, lastMoveAt: null };
+    } else {
+      room.clocks = null;
+    }
+  } else if (field === 'chess960') {
+    room.chess960 = !!value;
+    if (room.chess960) {
+      const newFen = generateChess960FEN();
+      room.chess = new Chess(newFen);
+      room.startingFen = newFen;
+    } else {
+      room.chess = new Chess();
+      room.startingFen = null;
+    }
+  } else if (field === 'colorSwap') {
+    const oldWhite = room.white;
+    const oldBlack = room.black;
+    room.white = { ...oldBlack };
+    room.black = { ...oldWhite };
+  }
+
+  // Reset ready states on any change
+  room.ready = { w: false, b: false };
+
+  const updatedSettings = {
+    timeControl: room.timeControl,
+    chess960: room.chess960,
+    videoEnabled: room.videoEnabled,
+  };
+
+  send(room.white.ws, 'setting_changed', { field, settings: updatedSettings, ready: { w: false, b: false }, color: 'w', changedBy: side });
+  send(room.black.ws, 'setting_changed', { field, settings: updatedSettings, ready: { w: false, b: false }, color: 'b', changedBy: side });
+}
+
+function handlePlayerReady(sessionId, ready) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return;
+  const room = rooms.get(roomId);
+  if (!room || room.status !== 'lobby') return;
+
+  const side = getPlayerSide(room, sessionId);
+  if (!side) return;
+
+  room.ready[side] = ready;
+
+  send(room.white.ws, 'ready_state', { w: room.ready.w, b: room.ready.b });
+  send(room.black.ws, 'ready_state', { w: room.ready.w, b: room.ready.b });
+
+  if (room.ready.w && room.ready.b) {
+    startGameFromLobby(room);
+  }
+}
+
+function startGameFromLobby(room) {
+  room.status = 'playing';
+
+  // For odds TC: if creator ended up as black, swap clocks and TC string so
+  // white/black values correctly reflect each player's actual starting time
+  const oddsMatch = room.timeControl.match(/^(\d+)\/(\d+)\+(\d+)$/);
+  if (oddsMatch && room.clocks && room.black.sessionId === room.creatorSessionId) {
+    const temp = room.clocks.w;
+    room.clocks.w = room.clocks.b;
+    room.clocks.b = temp;
+    room.timeControl = `${oddsMatch[2]}/${oddsMatch[1]}+${oddsMatch[3]}`;
+  }
 
   // Create database game record
   room.dbGameId = createGame({
@@ -138,7 +252,6 @@ function joinRoom(ws, sessionId, name, roomId) {
     black: { name: room.black.name, isAI: false, elo: null, engineId: null },
   });
 
-  // Start clock if timed
   if (room.clocks) {
     room.clocks.lastMoveAt = Date.now();
   }
@@ -153,6 +266,39 @@ function joinRoom(ws, sessionId, name, roomId) {
 
   send(room.white.ws, 'game_start', { ...startPayload, color: 'w', opponentName: room.black.name, videoEnabled: room.videoEnabled });
   send(room.black.ws, 'game_start', { ...startPayload, color: 'b', opponentName: room.white.name, videoEnabled: room.videoEnabled });
+}
+
+function attemptLobbyReconnect(ws, sessionId, room) {
+  const side = getPlayerSide(room, sessionId);
+  if (!side) {
+    send(ws, 'error', { message: 'You are not a player in this room' });
+    return null;
+  }
+
+  const player = getPlayerBySide(room, side);
+  player.ws = ws;
+  player.connected = true;
+  player.disconnectedAt = null;
+
+  sessionRooms.set(sessionId, room.id);
+
+  if (room.disconnectTimer) {
+    clearTimeout(room.disconnectTimer);
+    room.disconnectTimer = null;
+  }
+
+  const lobbyPayload = {
+    roomId: room.id,
+    settings: { timeControl: room.timeControl, chess960: room.chess960, videoEnabled: room.videoEnabled },
+    white: { name: room.white.name, ready: room.ready.w },
+    black: { name: room.black.name, ready: room.ready.b },
+  };
+  send(ws, 'lobby_joined', { ...lobbyPayload, color: side, opponentName: getPlayerBySide(room, side === 'w' ? 'b' : 'w').name });
+
+  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+  if (opponent && opponent.ws) {
+    send(opponent.ws, 'opponent_reconnected', {});
+  }
 
   return room;
 }
@@ -343,8 +489,12 @@ function handleRematchResponse(sessionId, accept) {
   // Reset clocks
   const tc = parseTimeControl(room.timeControl);
   if (tc) {
-    const timeMs = tc.minutes * 60 * 1000;
-    room.clocks = { w: timeMs, b: timeMs, increment: tc.increment * 1000, lastMoveAt: Date.now() };
+    room.clocks = {
+      w: tc.whiteMinutes * 60 * 1000,
+      b: tc.blackMinutes * 60 * 1000,
+      increment: tc.increment * 1000,
+      lastMoveAt: Date.now(),
+    };
   }
 
   // Create new DB game
@@ -393,6 +543,23 @@ function handleDisconnect(sessionId) {
           cleanupRoom(roomId);
         }
       }, WAITING_ROOM_TTL);
+    }
+    return;
+  }
+
+  if (room.status === 'lobby') {
+    // Keep lobby alive — same grace period as waiting
+    if (!room.disconnectTimer) {
+      room.disconnectTimer = setTimeout(() => {
+        const r = rooms.get(roomId);
+        if (r && r.status === 'lobby') {
+          cleanupRoom(roomId);
+        }
+      }, DISCONNECT_GRACE_PERIOD);
+    }
+    const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+    if (opponent && opponent.ws) {
+      send(opponent.ws, 'opponent_disconnected', { timeout: DISCONNECT_GRACE_PERIOD / 1000 });
     }
     return;
   }
@@ -544,7 +711,7 @@ function getRoomForSession(sessionId) {
  */
 function findRoomBySession(sessionId) {
   for (const room of rooms.values()) {
-    if (room.status !== 'playing' && room.status !== 'waiting') continue;
+    if (room.status !== 'playing' && room.status !== 'waiting' && room.status !== 'lobby') continue;
     if (room.white?.sessionId === sessionId || room.black?.sessionId === sessionId) {
       sessionRooms.set(sessionId, room.id);
       return room;
@@ -566,7 +733,7 @@ function listRoomsForSession(sessionId) {
   for (const room of rooms.values()) {
     const side = getPlayerSide(room, sessionId);
     if (!side) continue;
-    if (room.status !== 'waiting' && room.status !== 'playing') continue;
+    if (room.status !== 'waiting' && room.status !== 'playing' && room.status !== 'lobby') continue;
     result.push({
       roomId: room.id,
       status: room.status,
@@ -746,6 +913,8 @@ function handleReviewExit(sessionId) {
 module.exports = {
   createRoom,
   joinRoom,
+  handleSettingChange,
+  handlePlayerReady,
   makeMove,
   handleResign,
   handleDrawOffer,

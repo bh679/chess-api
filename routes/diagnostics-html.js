@@ -179,6 +179,7 @@ function renderWebRtcSummary(summary) {
 function renderEventRow(e, baseTs) {
   const color = categoryColor(e.category);
   const dataStr = escapeHtml(JSON.stringify(e.data || {}, null, 2));
+  const dataCompact = escapeHtml(JSON.stringify(e.data || {}));
   const rel = baseTs ? formatRelativeMs(baseTs, e.timestamp) : '';
   const cat = escapeHtml(e.category || 'unknown');
   return `<div class="event-row" data-cat="${cat}">
@@ -188,7 +189,7 @@ function renderEventRow(e, baseTs) {
     </div>
     <span class="badge" style="background:${color}">${cat}</span>
     <span class="event-type">${escapeHtml(e.eventType || '—')}</span>
-    <details class="data-detail"><summary>data</summary><pre>${dataStr}</pre></details>
+    <details class="data-detail"><summary>${dataCompact}</summary><pre>${dataStr}</pre></details>
   </div>`;
 }
 
@@ -272,6 +273,44 @@ function renderMovesSection(game) {
 </details>`;
 }
 
+function renderIssueReportsSection(issueReports) {
+  if (!issueReports || issueReports.length === 0) return '';
+
+  const reportCards = issueReports.map(r => {
+    const catBadges = (r.categories || []).map(c =>
+      `<span class="ir-cat-badge">${escapeHtml(c.replace(/_/g, ' '))}</span>`
+    ).join(' ');
+
+    const autoTag = r.autoDetected
+      ? '<span class="ir-auto-tag">auto-detected</span>'
+      : '';
+
+    const desc = r.description
+      ? `<div class="ir-desc">${escapeHtml(r.description)}</div>`
+      : '<div class="ir-desc ir-desc-empty">No description provided</div>';
+
+    const di = r.deviceInfo || {};
+    const deviceStr = [di.browser, di.os].filter(Boolean).join(' · ') || '—';
+
+    return `<div class="ir-report-card">
+      <div class="ir-report-header">
+        <span class="ir-flag-icon">⚑</span>
+        <span class="ir-report-time">${formatTs(r.createdAt)}</span>
+        ${autoTag}
+        <span class="ir-report-session" title="${escapeHtml(r.sessionId)}">${escapeHtml(String(r.sessionId).slice(0, 8))}…</span>
+        <span class="ir-report-device">${escapeHtml(deviceStr)}</span>
+      </div>
+      ${catBadges ? `<div class="ir-cats">${catBadges}</div>` : ''}
+      ${desc}
+    </div>`;
+  }).join('\n');
+
+  return `<div class="ir-section">
+  <div class="ir-section-title">⚑ ${issueReports.length} Issue Report${issueReports.length !== 1 ? 's' : ''}</div>
+  ${reportCards}
+</div>`;
+}
+
 function renderConnectionDots(sessionStates) {
   if (!sessionStates || sessionStates.length === 0) return '';
   return sessionStates.slice(0, 2).map(s => {
@@ -315,14 +354,15 @@ function renderGamesNav(recentGames, currentGameId) {
 ${legend}`;
 }
 
-function renderDiagnosticsHTML(result, context, recentGames = [], game = null) {
+function renderDiagnosticsHTML(result, context, recentGames = [], game = null, issueReports = []) {
   const { events = [], count = 0 } = result;
   const ctxLabel = context || `Game ${result.gameId}`;
   const firstTs = events.length ? events[0].timestamp : null;
   const lastTs  = events.length ? events[events.length - 1].timestamp : null;
   const timeRange = firstTs ? `${formatTs(firstTs)} → ${formatTs(lastTs)}` : 'No events';
   const sessions = groupBySession(events);
-  const rawJson = escapeHtml(JSON.stringify(result, null, 2));
+  const resultWithIssues = { ...result, issueReports };
+  const rawJson = escapeHtml(JSON.stringify(resultWithIssues, null, 2));
   const roomCodes = [...new Set(events.map(e => e.roomCode).filter(Boolean))].join(', ') || '—';
 
   return `<!DOCTYPE html>
@@ -413,19 +453,21 @@ function renderDiagnosticsHTML(result, context, recentGames = [], game = null) {
 
   /* Events */
   .session-events { padding: 0 16px 12px; display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
-  .event-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px 8px; border-radius: 6px; flex-wrap: wrap; }
+  .event-row { display: flex; align-items: baseline; gap: 10px; padding: 6px 8px; border-radius: 6px; overflow: hidden; }
   .event-row:hover { background: #1a2740; }
-  .event-time { display: flex; flex-direction: column; min-width: 145px; }
+  .event-time { display: flex; flex-direction: column; min-width: 145px; flex-shrink: 0; }
   .ts-abs { color: #94a3b8; font-size: 11px; white-space: nowrap; }
   .ts-rel { color: #475569; font-size: 10px; }
-  .event-type { color: #e2e8f0; flex: 1; min-width: 120px; }
+  .event-type { color: #e2e8f0; white-space: nowrap; flex-shrink: 0; min-width: 120px; }
 
   /* Badges */
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap; flex-shrink: 0; }
   .badge.sm { font-size: 10px; padding: 1px 6px; }
 
   /* Data detail */
-  .data-detail summary { cursor: pointer; color: #475569; font-size: 11px; }
+  .data-detail { flex: 1; min-width: 0; overflow: hidden; }
+  .data-detail summary { cursor: pointer; color: #64748b; font-size: 11px; display: block; list-style: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+  .data-detail summary::-webkit-details-marker { display: none; }
   .data-detail summary:hover { color: #94a3b8; }
   .data-detail[open] summary { color: #60a5fa; }
   pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 4px; padding: 8px; margin-top: 6px; font-size: 11px; color: #a5f3fc; white-space: pre-wrap; word-break: break-all; max-width: 520px; }
@@ -435,6 +477,21 @@ function renderDiagnosticsHTML(result, context, recentGames = [], game = null) {
 
   /* Empty */
   .empty { color: #475569; padding: 48px; text-align: center; }
+
+  /* Issue Reports */
+  .ir-section { margin: 12px 24px; }
+  .ir-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #f87171; margin-bottom: 10px; }
+  .ir-report-card { background: #1e293b; border: 1px solid #7f1d1d; border-left: 3px solid #ef4444; border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; }
+  .ir-report-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .ir-flag-icon { color: #f87171; font-size: 14px; }
+  .ir-report-time { color: #94a3b8; font-size: 11px; white-space: nowrap; }
+  .ir-auto-tag { background: #7f1d1d; color: #fca5a5; font-size: 10px; padding: 1px 8px; border-radius: 999px; font-weight: 600; }
+  .ir-report-session { color: #475569; font-size: 11px; margin-left: auto; }
+  .ir-report-device { color: #475569; font-size: 11px; }
+  .ir-cats { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .ir-cat-badge { background: #451a03; border: 1px solid #92400e; color: #fbbf24; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .ir-desc { color: #e2e8f0; font-size: 12px; line-height: 1.5; padding: 6px 0; }
+  .ir-desc-empty { color: #475569; font-style: italic; }
 </style>
 </head>
 <body>
@@ -456,6 +513,7 @@ function renderDiagnosticsHTML(result, context, recentGames = [], game = null) {
   <div class="stat"><span class="stat-label">Events</span><span class="stat-value">${count}</span></div>
   <div class="stat"><span class="stat-label">Sessions</span><span class="stat-value">${sessions.length}</span></div>
   <div class="stat"><span class="stat-label">Time range</span><span class="stat-value" style="font-size:12px">${timeRange}</span></div>
+  ${issueReports.length > 0 ? `<div class="stat"><span class="stat-label">Issues</span><span class="stat-value" style="color:#f87171">⚑ ${issueReports.length} flagged</span></div>` : ''}
 </div>
 
 ${renderGamesNav(recentGames, result.gameId)}
@@ -463,6 +521,8 @@ ${renderGamesNav(recentGames, result.gameId)}
 ${events.length > 0 ? `<div class="filter-bar"><span class="filter-label">Show</span>${categoryFilterBar(events)}</div>` : ''}
 
 ${renderMovesSection(game)}
+
+${renderIssueReportsSection(issueReports)}
 
 <div class="sessions">
   ${events.length === 0
@@ -477,7 +537,7 @@ ${renderMovesSection(game)}
 </div>
 
 <script>
-var _json = ${JSON.stringify(JSON.stringify(result))};
+var _json = ${JSON.stringify(JSON.stringify(resultWithIssues))};
 var _gameId = ${result.gameId ? result.gameId : 'null'};
 function copyApiLink() {
   var url = location.origin + '/api/chess/diagnostics/game/' + _gameId;

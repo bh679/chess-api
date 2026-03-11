@@ -9,6 +9,7 @@ const {
   getDiagnosticsRecentGames,
   getGameSessionStates,
   getGame,
+  getIssueReportsByGame,
 } = require('../db');
 const { renderDiagnosticsHTML } = require('./diagnostics-html');
 
@@ -72,7 +73,8 @@ router.get('/diagnostics', (req, res) => {
         : g
     );
     const game = result.gameId ? getGame(result.gameId) : null;
-    return res.send(renderDiagnosticsHTML(result, `Game ${result.gameId}`, recentGamesWithStates, game));
+    const issueReports = result.gameId ? getIssueReportsByGame(result.gameId) : [];
+    return res.send(renderDiagnosticsHTML(result, `Game ${result.gameId}`, recentGamesWithStates, game, issueReports));
   } catch (e) {
     console.error('GET /diagnostics error:', e.message);
     res.status(500).json({ error: e.message });
@@ -91,7 +93,8 @@ router.get('/diagnostics/game/:id', (req, res) => {
       limit: Math.min(parseInt(limit, 10) || 500, 1000),
       offset: parseInt(offset, 10) || 0,
     });
-    const result = { gameId, events, count: events.length };
+    const issueReports = getIssueReportsByGame(gameId);
+    const result = { gameId, events, count: events.length, issueReports };
 
     res.json(result);
   } catch (e) {
@@ -149,7 +152,8 @@ router.get('/diagnostics/recent', (req, res) => {
     });
     if (result.gameId === null) return res.status(404).json({ error: 'No game diagnostics found' });
 
-    res.json(result);
+    const issueReports = result.gameId ? getIssueReportsByGame(result.gameId) : [];
+    res.json({ ...result, issueReports });
   } catch (e) {
     console.error('GET /diagnostics/recent error:', e.message);
     res.status(500).json({ error: e.message });
