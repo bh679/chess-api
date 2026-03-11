@@ -75,7 +75,7 @@ router.get('/diagnostics/game/:id', (req, res) => {
     });
     const result = { gameId, events, count: events.length };
 
-    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Game ${gameId}`));
+    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Game ${gameId}`, getDiagnosticsRecentGames()));
     res.json(result);
   } catch (e) {
     console.error('GET /diagnostics/game/:id error:', e.message);
@@ -95,7 +95,7 @@ router.get('/diagnostics/room/:code', (req, res) => {
     });
     const result = { roomCode, events, count: events.length };
 
-    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Room ${roomCode}`));
+    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Room ${roomCode}`, getDiagnosticsRecentGames()));
     res.json(result);
   } catch (e) {
     console.error('GET /diagnostics/room/:code error:', e.message);
@@ -115,7 +115,7 @@ router.get('/diagnostics/session/:id', (req, res) => {
     });
     const result = { sessionId, events, count: events.length };
 
-    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Session ${sessionId.slice(0, 8)}…`));
+    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Session ${sessionId.slice(0, 8)}…`, getDiagnosticsRecentGames()));
     res.json(result);
   } catch (e) {
     console.error('GET /diagnostics/session/:id error:', e.message);
@@ -134,7 +134,7 @@ router.get('/diagnostics/recent', (req, res) => {
     });
     if (result.gameId === null) return res.status(404).json({ error: 'No game diagnostics found' });
 
-    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Recent game (ID ${result.gameId})`));
+    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Recent game (ID ${result.gameId})`, getDiagnosticsRecentGames()));
     res.json(result);
   } catch (e) {
     console.error('GET /diagnostics/recent error:', e.message);
