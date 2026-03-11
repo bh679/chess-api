@@ -5,9 +5,10 @@ const queues = new Map();
 
 const DEFAULT_TC = '5+0';
 
-function joinQueue(ws, sessionId, name, timeControl, videoEnabled, chess960) {
+function joinQueue(ws, sessionId, name, timeControl, camMode, chess960) {
   const tc = timeControl || DEFAULT_TC;
-  const wantsVideo = !!videoEnabled;
+  const effectiveCamMode = ['none', 'king-cam', 'board-face'].includes(camMode) ? camMode : 'none';
+  const wantsVideo = effectiveCamMode !== 'none';
 
   // Check if already in a queue
   for (const [, q] of queues) {
@@ -25,7 +26,7 @@ function joinQueue(ws, sessionId, name, timeControl, videoEnabled, chess960) {
   }
 
   const wantsChess960 = !!chess960;
-  const player = { ws, sessionId, name: name || 'Opponent', videoEnabled: wantsVideo, chess960: wantsChess960 };
+  const player = { ws, sessionId, name: name || 'Opponent', camMode: effectiveCamMode, videoEnabled: wantsVideo, chess960: wantsChess960 };
 
   // Try to find a match (video and chess960 preferences must match)
   const match = findMatch(tc, wantsVideo, wantsChess960);
@@ -36,7 +37,7 @@ function joinQueue(ws, sessionId, name, timeControl, videoEnabled, chess960) {
     if (!opponent.ws || opponent.ws.readyState !== 1) {
       // Opponent disconnected, remove them and retry
       removeFromQueue(opponent.sessionId);
-      return joinQueue(ws, sessionId, name, timeControl, videoEnabled, chess960);
+      return joinQueue(ws, sessionId, name, timeControl, camMode, chess960);
     }
 
     // Match found — create a room with randomly assigned colors
@@ -44,9 +45,10 @@ function joinQueue(ws, sessionId, name, timeControl, videoEnabled, chess960) {
     const whitePlayer = creatorIsWhite ? opponent : player;
     const blackPlayer = creatorIsWhite ? player : opponent;
 
-    const matchVideoEnabled = wantsVideo && opponent.videoEnabled;
+    // Use cam mode only if both players want video; prefer the joiner's cam mode
+    const matchCamMode = (wantsVideo && opponent.videoEnabled) ? (player.camMode || opponent.camMode) : 'none';
     const matchChess960 = wantsChess960 && opponent.chess960;
-    const room = rooms.createRoom(whitePlayer.ws, whitePlayer.sessionId, whitePlayer.name, matchTc, matchVideoEnabled, matchChess960);
+    const room = rooms.createRoom(whitePlayer.ws, whitePlayer.sessionId, whitePlayer.name, matchTc, matchCamMode, matchChess960);
     rooms.joinRoom(blackPlayer.ws, blackPlayer.sessionId, blackPlayer.name, room.id);
   } else {
     // No match — add to queue
