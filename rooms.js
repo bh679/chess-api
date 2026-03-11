@@ -427,6 +427,9 @@ function attemptReconnect(ws, sessionId, room) {
   player.connected = true;
   player.disconnectedAt = null;
 
+  // Restore session→room mapping (defensive: handles edge cases where it was lost)
+  sessionRooms.set(sessionId, room.id);
+
   // Clear disconnect timer
   if (room.disconnectTimer) {
     clearTimeout(room.disconnectTimer);
@@ -531,6 +534,22 @@ function send(ws, type, payload) {
 function getRoomForSession(sessionId) {
   const roomId = sessionRooms.get(sessionId);
   return roomId ? rooms.get(roomId) : null;
+}
+
+/**
+ * Fallback room lookup by scanning all active rooms.
+ * Used when sessionRooms mapping is missing due to edge cases.
+ * Also restores the mapping if found.
+ */
+function findRoomBySession(sessionId) {
+  for (const room of rooms.values()) {
+    if (room.status !== 'playing' && room.status !== 'waiting') continue;
+    if (room.white?.sessionId === sessionId || room.black?.sessionId === sessionId) {
+      sessionRooms.set(sessionId, room.id);
+      return room;
+    }
+  }
+  return null;
 }
 
 function getRoomCount() {
@@ -743,6 +762,7 @@ module.exports = {
   handleReviewAnalysis,
   handleReviewExit,
   getRoomForSession,
+  findRoomBySession,
   getRoomCount,
   listRoomsForSession,
   cancelRoom,

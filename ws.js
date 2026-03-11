@@ -39,7 +39,11 @@ function initWebSocket(server) {
         sessionConnectionCount.set(sessionId, count + 1);
 
         // Check for existing room to reconnect
-        const existingRoom = rooms.getRoomForSession(sessionId);
+        let existingRoom = rooms.getRoomForSession(sessionId);
+        // Fallback: scan all rooms if sessionRooms mapping is missing
+        if (!existingRoom) {
+          existingRoom = rooms.findRoomBySession(sessionId);
+        }
         let reconnected = false;
         if (existingRoom && (existingRoom.status === 'playing' || existingRoom.status === 'waiting')) {
           const joinResult = rooms.joinRoom(ws, sessionId, null, existingRoom.id);
