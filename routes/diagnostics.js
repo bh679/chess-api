@@ -6,6 +6,7 @@ const {
   getDiagnosticsByRoom,
   getDiagnosticsBySession,
   getDiagnosticsRecent,
+  getDiagnosticsRecentGames,
 } = require('../db');
 const { renderDiagnosticsHTML } = require('./diagnostics-html');
 
@@ -37,6 +38,25 @@ router.post('/diagnostics', (req, res) => {
     res.status(204).end();
   } catch (e) {
     console.error('POST /diagnostics error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/chess/diagnostics — HTML dashboard showing the most recent game
+router.get('/diagnostics', (req, res) => {
+  try {
+    const { category, limit = 500, offset = 0 } = req.query;
+    const result = getDiagnosticsRecent({
+      category: category || null,
+      limit: Math.min(parseInt(limit, 10) || 500, 1000),
+      offset: parseInt(offset, 10) || 0,
+    });
+    if (result.gameId === null) return res.status(404).send('<p>No game diagnostics found.</p>');
+
+    const recentGames = getDiagnosticsRecentGames();
+    return res.send(renderDiagnosticsHTML(result, `Recent game (ID ${result.gameId})`, recentGames));
+  } catch (e) {
+    console.error('GET /diagnostics error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });

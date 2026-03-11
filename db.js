@@ -729,6 +729,20 @@ function getDiagnosticsRecent({ category, limit, offset } = {}) {
   return { gameId: row.game_id, events, count: events.length };
 }
 
+function getDiagnosticsRecentGames({ limit = 20 } = {}) {
+  return db.prepare(
+    `SELECT game_id, COUNT(*) as event_count,
+            MIN(timestamp) as first_ts, MAX(timestamp) as last_ts
+     FROM diagnostic_events WHERE game_id IS NOT NULL
+     GROUP BY game_id ORDER BY game_id DESC LIMIT ?`
+  ).all(limit).map(r => ({
+    gameId: r.game_id,
+    eventCount: r.event_count,
+    firstTs: r.first_ts,
+    lastTs: r.last_ts,
+  }));
+}
+
 function cleanupOldDiagnostics(maxAgeDays = 30) {
   const cutoff = Date.now() - (maxAgeDays * 24 * 60 * 60 * 1000);
   const info = db.prepare('DELETE FROM diagnostic_events WHERE created_at < ?').run(cutoff);
@@ -796,5 +810,6 @@ module.exports = {
   getDiagnosticsByRoom,
   getDiagnosticsBySession,
   getDiagnosticsRecent,
+  getDiagnosticsRecentGames,
   cleanupOldDiagnostics,
 };

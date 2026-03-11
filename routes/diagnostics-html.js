@@ -183,7 +183,25 @@ function renderSessionSection(sessionId, events) {
 </details>`;
 }
 
-function renderDiagnosticsHTML(result, context) {
+function renderGamesNav(recentGames, currentGameId) {
+  if (!recentGames || recentGames.length === 0) return '';
+
+  const items = recentGames.map(g => {
+    const isCurrent = g.gameId === currentGameId;
+    const label = `#${g.gameId} · ${g.eventCount} event${g.eventCount !== 1 ? 's' : ''} · ${formatTs(g.lastTs)}`;
+    if (isCurrent) {
+      return `<span class="game-nav-item game-nav-current" title="Currently viewing">${escapeHtml(label)}</span>`;
+    }
+    return `<a class="game-nav-item" href="/api/chess/diagnostics/game/${g.gameId}">${escapeHtml(label)}</a>`;
+  }).join('');
+
+  return `<div class="games-nav">
+  <span class="games-nav-label">GAMES</span>
+  <div class="games-nav-list">${items}</div>
+</div>`;
+}
+
+function renderDiagnosticsHTML(result, context, recentGames = []) {
   const { events = [], count = 0 } = result;
   const ctxLabel = context || `Game ${result.gameId}`;
   const firstTs = events.length ? events[0].timestamp : null;
@@ -217,9 +235,13 @@ function renderDiagnosticsHTML(result, context) {
   .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: #64748b; }
   .stat-value { font-size: 15px; font-weight: 600; color: #f1f5f9; }
 
-  /* Nav */
-  .nav { padding: 10px 24px; border-bottom: 1px solid #1e293b; font-size: 11px; color: #475569; display: flex; gap: 12px; flex-wrap: wrap; }
-  .nav a { color: #60a5fa; }
+  /* Games nav */
+  .games-nav { padding: 10px 24px; border-bottom: 1px solid #334155; background: #0f172a; display: flex; align-items: flex-start; gap: 12px; }
+  .games-nav-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #475569; white-space: nowrap; padding-top: 3px; }
+  .games-nav-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .game-nav-item { font-size: 11px; padding: 3px 10px; border-radius: 999px; border: 1px solid #334155; color: #94a3b8; text-decoration: none; white-space: nowrap; }
+  .game-nav-item:hover { background: #1e293b; color: #e2e8f0; border-color: #475569; }
+  .game-nav-current { background: #1e3a5f; border-color: #3b82f6; color: #60a5fa; cursor: default; }
 
   /* Legend */
   .legend { padding: 8px 24px 12px; display: flex; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid #1e293b; }
@@ -297,13 +319,7 @@ function renderDiagnosticsHTML(result, context) {
   <div class="stat"><span class="stat-label">Time range</span><span class="stat-value" style="font-size:12px">${timeRange}</span></div>
 </div>
 
-<div class="nav">
-  <a href="?">Recent game</a>
-  <span>|</span>
-  <span>Game: /api/chess/diagnostics/game/:id</span>
-  <span>Room: /api/chess/diagnostics/room/:code</span>
-  <span>Session: /api/chess/diagnostics/session/:id</span>
-</div>
+${renderGamesNav(recentGames, result.gameId)}
 
 ${events.length > 0 ? `<div class="legend">${categoryLegend(events)}</div>` : ''}
 
