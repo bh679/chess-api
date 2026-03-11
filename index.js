@@ -11,6 +11,7 @@ const gameHistoryRouter = require('./routes/game-history');
 const roomsRouter = require('./routes/rooms');
 const iceServersRouter = require('./routes/ice-servers');
 const diagnosticsRouter = require('./routes/diagnostics');
+const issuesRouter = require('./routes/issues');
 const { initWebSocket } = require('./ws');
 const { version } = require('./package.json');
 const { cleanupOldDiagnostics } = require('./db');
@@ -51,6 +52,7 @@ app.use('/api/chess', gameHistoryRouter);
 app.use('/api/chess', roomsRouter);
 app.use('/api/chess', iceServersRouter);
 app.use('/api/chess', diagnosticsRouter);
+app.use('/api/chess', issuesRouter);
 
 // SPA catch-all: serve index.html for non-API, non-static paths
 // This allows path-based URLs (/replay, /games) to load the app,
