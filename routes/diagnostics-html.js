@@ -179,6 +179,7 @@ function renderWebRtcSummary(summary) {
 function renderEventRow(e, baseTs) {
   const color = categoryColor(e.category);
   const dataStr = escapeHtml(JSON.stringify(e.data || {}, null, 2));
+  const dataCompact = escapeHtml(JSON.stringify(e.data || {}));
   const rel = baseTs ? formatRelativeMs(baseTs, e.timestamp) : '';
   const cat = escapeHtml(e.category || 'unknown');
   return `<div class="event-row" data-cat="${cat}">
@@ -188,7 +189,7 @@ function renderEventRow(e, baseTs) {
     </div>
     <span class="badge" style="background:${color}">${cat}</span>
     <span class="event-type">${escapeHtml(e.eventType || '—')}</span>
-    <details class="data-detail"><summary>data</summary><pre>${dataStr}</pre></details>
+    <details class="data-detail"><summary>${dataCompact}</summary><pre>${dataStr}</pre></details>
   </div>`;
 }
 
@@ -452,19 +453,21 @@ function renderDiagnosticsHTML(result, context, recentGames = [], game = null, i
 
   /* Events */
   .session-events { padding: 0 16px 12px; display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
-  .event-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px 8px; border-radius: 6px; flex-wrap: wrap; }
+  .event-row { display: flex; align-items: baseline; gap: 10px; padding: 6px 8px; border-radius: 6px; overflow: hidden; }
   .event-row:hover { background: #1a2740; }
-  .event-time { display: flex; flex-direction: column; min-width: 145px; }
+  .event-time { display: flex; flex-direction: column; min-width: 145px; flex-shrink: 0; }
   .ts-abs { color: #94a3b8; font-size: 11px; white-space: nowrap; }
   .ts-rel { color: #475569; font-size: 10px; }
-  .event-type { color: #e2e8f0; flex: 1; min-width: 120px; }
+  .event-type { color: #e2e8f0; white-space: nowrap; flex-shrink: 0; min-width: 120px; }
 
   /* Badges */
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap; flex-shrink: 0; }
   .badge.sm { font-size: 10px; padding: 1px 6px; }
 
   /* Data detail */
-  .data-detail summary { cursor: pointer; color: #475569; font-size: 11px; }
+  .data-detail { flex: 1; min-width: 0; overflow: hidden; }
+  .data-detail summary { cursor: pointer; color: #64748b; font-size: 11px; display: block; list-style: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+  .data-detail summary::-webkit-details-marker { display: none; }
   .data-detail summary:hover { color: #94a3b8; }
   .data-detail[open] summary { color: #60a5fa; }
   pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 4px; padding: 8px; margin-top: 6px; font-size: 11px; color: #a5f3fc; white-space: pre-wrap; word-break: break-all; max-width: 520px; }
