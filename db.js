@@ -731,15 +731,56 @@ function getDiagnosticsRecent({ category, limit, offset } = {}) {
 
 function getDiagnosticsRecentGames({ limit = 20 } = {}) {
   return db.prepare(
-    `SELECT game_id, COUNT(*) as event_count,
-            MIN(timestamp) as first_ts, MAX(timestamp) as last_ts
-     FROM diagnostic_events WHERE game_id IS NOT NULL
-     GROUP BY game_id ORDER BY game_id DESC LIMIT ?`
+    `SELECT d.game_id, COUNT(d.id) as event_count,
+            MIN(d.timestamp) as first_ts, MAX(d.timestamp) as last_ts,
+            g.result, g.result_reason, g.end_time,
+            (SELECT COUNT(*) FROM moves m WHERE m.game_id = d.game_id) as move_count
+     FROM diagnostic_events d
+     LEFT JOIN games g ON g.id = d.game_id
+     WHERE d.game_id IS NOT NULL
+     GROUP BY d.game_id ORDER BY d.game_id DESC LIMIT ?`
   ).all(limit).map(r => ({
     gameId: r.game_id,
     eventCount: r.event_count,
     firstTs: r.first_ts,
     lastTs: r.last_ts,
+    result: r.result || null,
+    resultReason: r.result_reason || null,
+    endTime: r.end_time || null,
+    moveCount: r.move_count || 0,
+  }));
+}
+
+function getGameSessionStates(gameId) {
+  // Get top-2 sessions by most recent activity for the game
+  const sessions = db.prepare(
+    `SELECT session_id, MAX(timestamp) as last_ts
+     FROM diagnostic_events WHERE game_id = ?
+     GROUP BY session_id ORDER BY last_ts DESC LIMIT 2`
+  ).all(gameId);
+
+  // Get all recent webrtc state-change events for this game, newest first
+  const webrtcEvents = db.prepare(
+    `SELECT session_id, event_type, data, timestamp
+     FROM diagnostic_events
+     WHERE game_id = ? AND category = 'webrtc'
+       AND event_type IN ('connection_state_change', 'ice_state_change')
+     ORDER BY timestamp DESC`
+  ).all(gameId);
+
+  // Build per-session map with last connection state
+  const stateBySession = new Map();
+  for (const e of webrtcEvents) {
+    if (!stateBySession.has(e.session_id)) {
+      const d = JSON.parse(e.data || '{}');
+      stateBySession.set(e.session_id, d.state || null);
+    }
+  }
+
+  return sessions.map(s => ({
+    sessionId: s.session_id,
+    lastTs: s.last_ts,
+    connectionState: stateBySession.get(s.session_id) || null,
   }));
 }
 
@@ -811,5 +852,6 @@ module.exports = {
   getDiagnosticsBySession,
   getDiagnosticsRecent,
   getDiagnosticsRecentGames,
+  getGameSessionStates,
   cleanupOldDiagnostics,
 };
