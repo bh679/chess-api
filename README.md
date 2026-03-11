@@ -12,7 +12,7 @@ REST API server for persistent chess game storage. Stores games and moves in a S
 
 ## Version
 
-**Current:** `1.20.0000`
+**Current:** `1.21.0000`
 
 The `/api/health` endpoint returns the server version. The client checks this on startup to verify compatibility.
 
@@ -158,7 +158,7 @@ The WebSocket server listens on `/ws` path (same port as HTTP). It handles real-
 | `opponent_reconnected` | `{}` | Opponent reconnected |
 | `error` | `{ message }` | Error message |
 
-**Time controls:** `"1+0"`, `"3+2"`, `"5+0"`, `"10+0"`, `"15+10"`, `"30+0"`, `"none"` (no timer), `"any"` (match with any TC).
+**Time controls:** `"1+0"`, `"3+2"`, `"5+0"`, `"10+0"`, `"15+10"`, `"30+0"`, `"none"` (no timer), `"any"` (match with any TC), `"W/B+inc"` (custom asymmetric — e.g. `"10/5+3"` for white 10 min, black 5 min, 3 sec increment).
 
 **Rooms** are stored in-memory only (not persisted to database). A 60-second disconnect grace period allows reconnection without forfeiting.
 
