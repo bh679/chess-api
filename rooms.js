@@ -51,10 +51,22 @@ function generateChess960FEN() {
 
 function parseTimeControl(tc) {
   if (!tc || tc === 'none') return null;
-  // Format: "5+0", "10+5", "3+2", etc.
-  const match = tc.match(/^(\d+)\+(\d+)$/);
-  if (!match) return null;
-  return { minutes: parseInt(match[1], 10), increment: parseInt(match[2], 10) };
+  // Symmetric format: "5+0", "10+5", "3+2", etc.
+  const symMatch = tc.match(/^(\d+)\+(\d+)$/);
+  if (symMatch) {
+    const min = parseInt(symMatch[1], 10);
+    return { whiteMinutes: min, blackMinutes: min, increment: parseInt(symMatch[2], 10) };
+  }
+  // Asymmetric/odds format: "10/5+3" (white 10 min, black 5 min, 3 sec increment)
+  const oddsMatch = tc.match(/^(\d+)\/(\d+)\+(\d+)$/);
+  if (oddsMatch) {
+    return {
+      whiteMinutes: parseInt(oddsMatch[1], 10),
+      blackMinutes: parseInt(oddsMatch[2], 10),
+      increment:    parseInt(oddsMatch[3], 10),
+    };
+  }
+  return null;
 }
 
 function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
@@ -62,7 +74,8 @@ function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
   // "any" defaults to 5+0 for room creation
   const effectiveTc = timeControl === 'any' ? '5+0' : timeControl;
   const tc = parseTimeControl(effectiveTc);
-  const timeMs = tc ? tc.minutes * 60 * 1000 : 0;
+  const whiteMsBase = tc ? tc.whiteMinutes * 60 * 1000 : 0;
+  const blackMsBase = tc ? tc.blackMinutes * 60 * 1000 : 0;
 
   const is960 = !!chess960;
   const startFen = is960 ? generateChess960FEN() : undefined;
@@ -74,7 +87,7 @@ function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
     chess: startFen ? new Chess(startFen) : new Chess(),
     startingFen: startFen || null,
     timeControl: effectiveTc || 'none',
-    clocks: tc ? { w: timeMs, b: timeMs, increment: tc.increment * 1000, lastMoveAt: null } : null,
+    clocks: tc ? { w: whiteMsBase, b: blackMsBase, increment: tc.increment * 1000, lastMoveAt: null } : null,
     moves: [],
     status: 'waiting',
     dbGameId: null,
@@ -82,6 +95,7 @@ function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
     cleanupTimer: null,
     videoEnabled: !!videoEnabled,
     chess960: is960,
+    creatorSessionId: sessionId,
   };
 
   rooms.set(roomId, room);
@@ -128,6 +142,16 @@ function joinRoom(ws, sessionId, name, roomId) {
   }
   room.status = 'playing';
   sessionRooms.set(sessionId, roomId);
+
+  // For odds TC: if creator ended up as black, swap clocks and TC string so
+  // white/black values correctly reflect each player's actual starting time
+  const oddsMatch = room.timeControl.match(/^(\d+)\/(\d+)\+(\d+)$/);
+  if (oddsMatch && room.clocks && room.black.sessionId === room.creatorSessionId) {
+    const temp = room.clocks.w;
+    room.clocks.w = room.clocks.b;
+    room.clocks.b = temp;
+    room.timeControl = `${oddsMatch[2]}/${oddsMatch[1]}+${oddsMatch[3]}`;
+  }
 
   // Create database game record
   room.dbGameId = createGame({
@@ -343,8 +367,12 @@ function handleRematchResponse(sessionId, accept) {
   // Reset clocks
   const tc = parseTimeControl(room.timeControl);
   if (tc) {
-    const timeMs = tc.minutes * 60 * 1000;
-    room.clocks = { w: timeMs, b: timeMs, increment: tc.increment * 1000, lastMoveAt: Date.now() };
+    room.clocks = {
+      w: tc.whiteMinutes * 60 * 1000,
+      b: tc.blackMinutes * 60 * 1000,
+      increment: tc.increment * 1000,
+      lastMoveAt: Date.now(),
+    };
   }
 
   // Create new DB game
