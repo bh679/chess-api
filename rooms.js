@@ -69,7 +69,7 @@ function parseTimeControl(tc) {
   return null;
 }
 
-function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
+function createRoom(ws, sessionId, name, timeControl, camMode, chess960) {
   const roomId = generateRoomCode();
   // "any" defaults to 5+0 for room creation
   const effectiveTc = timeControl === 'any' ? '5+0' : timeControl;
@@ -79,6 +79,7 @@ function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
 
   const is960 = !!chess960;
   const startFen = is960 ? generateChess960FEN() : undefined;
+  const effectiveCamMode = ['none', 'king-cam', 'board-face'].includes(camMode) ? camMode : 'none';
 
   const room = {
     id: roomId,
@@ -93,7 +94,8 @@ function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
     dbGameId: null,
     createdAt: Date.now(),
     cleanupTimer: null,
-    videoEnabled: !!videoEnabled,
+    camMode: effectiveCamMode,
+    videoEnabled: effectiveCamMode !== 'none', // backward compat
     chess960: is960,
     creatorSessionId: sessionId,
   };
@@ -101,7 +103,7 @@ function createRoom(ws, sessionId, name, timeControl, videoEnabled, chess960) {
   rooms.set(roomId, room);
   sessionRooms.set(sessionId, roomId);
 
-  send(ws, 'room_created', { roomId, color: 'w', videoEnabled: room.videoEnabled });
+  send(ws, 'room_created', { roomId, color: 'w', camMode: room.camMode, videoEnabled: room.videoEnabled });
   return room;
 }
 
@@ -264,8 +266,8 @@ function startGameFromLobby(room) {
     dbGameId: room.dbGameId,
   };
 
-  send(room.white.ws, 'game_start', { ...startPayload, color: 'w', opponentName: room.black.name, videoEnabled: room.videoEnabled });
-  send(room.black.ws, 'game_start', { ...startPayload, color: 'b', opponentName: room.white.name, videoEnabled: room.videoEnabled });
+  send(room.white.ws, 'game_start', { ...startPayload, color: 'w', opponentName: room.black.name, camMode: room.camMode, videoEnabled: room.videoEnabled });
+  send(room.black.ws, 'game_start', { ...startPayload, color: 'b', opponentName: room.white.name, camMode: room.camMode, videoEnabled: room.videoEnabled });
 }
 
 function attemptLobbyReconnect(ws, sessionId, room) {
@@ -617,6 +619,7 @@ function attemptReconnect(ws, sessionId, room) {
     clocks: clockPayload,
     opponentName: getPlayerBySide(room, side === 'w' ? 'b' : 'w').name,
     opponentConnected: getPlayerBySide(room, side === 'w' ? 'b' : 'w').connected,
+    camMode: room.camMode,
     videoEnabled: room.videoEnabled,
     chess960: room.chess960,
     dbGameId: room.dbGameId,
