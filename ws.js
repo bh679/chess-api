@@ -180,10 +180,6 @@ function initWebSocket(server) {
           rooms.handleSettingChange(sessionId, payload?.field, payload?.value);
           break;
 
-        case 'setting_respond':
-          rooms.handleSettingResponse(sessionId, payload?.changeId, !!payload?.accept);
-          break;
-
         case 'player_ready':
           rooms.handlePlayerReady(sessionId, payload?.ready !== false);
           break;

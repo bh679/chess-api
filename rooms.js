@@ -131,7 +131,6 @@ function joinRoom(ws, sessionId, name, roomId) {
   }
   room.status = 'lobby';
   room.ready = { w: false, b: false };
-  room.pendingChange = null;
   sessionRooms.set(sessionId, roomId);
 
   const lobbyPayload = {
@@ -156,88 +155,47 @@ function handleSettingChange(sessionId, field, value) {
   const validFields = ['timeControl', 'chess960', 'colorSwap'];
   if (!validFields.includes(field)) return;
 
-  if (room.pendingChange) {
-    send(getPlayerBySide(room, getPlayerSide(room, sessionId))?.ws, 'error', { message: 'A change is already pending' });
-    return;
-  }
-
   const side = getPlayerSide(room, sessionId);
   if (!side) return;
 
-  const changeId = Math.random().toString(36).slice(2, 10);
-  room.pendingChange = { id: changeId, field, value, proposedBy: side };
-
-  const proposer = getPlayerBySide(room, side);
-  const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
-
-  send(proposer.ws, 'setting_pending', { changeId, field, value });
-  send(opponent?.ws, 'setting_proposed', { changeId, field, value, proposedBy: side });
-}
-
-function handleSettingResponse(sessionId, changeId, accept) {
-  const roomId = sessionRooms.get(sessionId);
-  if (!roomId) return;
-  const room = rooms.get(roomId);
-  if (!room || room.status !== 'lobby') return;
-  if (!room.pendingChange || room.pendingChange.id !== changeId) return;
-
-  const responderSide = getPlayerSide(room, sessionId);
-  if (!responderSide || responderSide === room.pendingChange.proposedBy) return;
-
-  const { field, value } = room.pendingChange;
-  room.pendingChange = null;
-
-  if (accept) {
-    // Apply the change
-    if (field === 'timeControl') {
-      room.timeControl = value;
-      const tc = parseTimeControl(value);
-      if (tc) {
-        const timeMs = tc.minutes * 60 * 1000;
-        room.clocks = { w: timeMs, b: timeMs, increment: tc.increment * 1000, lastMoveAt: null };
-      } else {
-        room.clocks = null;
-      }
-    } else if (field === 'chess960') {
-      room.chess960 = !!value;
-      if (room.chess960) {
-        const newFen = generateChess960FEN();
-        room.chess = new Chess(newFen);
-        room.startingFen = newFen;
-      } else {
-        room.chess = new Chess();
-        room.startingFen = null;
-      }
-    } else if (field === 'colorSwap') {
-      const oldWhite = room.white;
-      const oldBlack = room.black;
-      room.white = { ...oldBlack };
-      room.black = { ...oldWhite };
+  // Apply the change immediately
+  if (field === 'timeControl') {
+    room.timeControl = value;
+    const tc = parseTimeControl(value);
+    if (tc) {
+      const timeMs = tc.minutes * 60 * 1000;
+      room.clocks = { w: timeMs, b: timeMs, increment: tc.increment * 1000, lastMoveAt: null };
+    } else {
+      room.clocks = null;
     }
-
-    // Reset ready states after any accepted change
-    room.ready = { w: false, b: false };
-
-    const updatedSettings = {
-      timeControl: room.timeControl,
-      chess960: room.chess960,
-      videoEnabled: room.videoEnabled,
-    };
-
-    send(room.white.ws, 'setting_resolved', {
-      changeId, field, accepted: true, settings: updatedSettings,
-      ready: { w: false, b: false },
-      color: 'w',
-    });
-    send(room.black.ws, 'setting_resolved', {
-      changeId, field, accepted: true, settings: updatedSettings,
-      ready: { w: false, b: false },
-      color: 'b',
-    });
-  } else {
-    send(room.white.ws, 'setting_resolved', { changeId, field, accepted: false });
-    send(room.black.ws, 'setting_resolved', { changeId, field, accepted: false });
+  } else if (field === 'chess960') {
+    room.chess960 = !!value;
+    if (room.chess960) {
+      const newFen = generateChess960FEN();
+      room.chess = new Chess(newFen);
+      room.startingFen = newFen;
+    } else {
+      room.chess = new Chess();
+      room.startingFen = null;
+    }
+  } else if (field === 'colorSwap') {
+    const oldWhite = room.white;
+    const oldBlack = room.black;
+    room.white = { ...oldBlack };
+    room.black = { ...oldWhite };
   }
+
+  // Reset ready states on any change
+  room.ready = { w: false, b: false };
+
+  const updatedSettings = {
+    timeControl: room.timeControl,
+    chess960: room.chess960,
+    videoEnabled: room.videoEnabled,
+  };
+
+  send(room.white.ws, 'setting_changed', { field, settings: updatedSettings, ready: { w: false, b: false }, color: 'w', changedBy: side });
+  send(room.black.ws, 'setting_changed', { field, settings: updatedSettings, ready: { w: false, b: false }, color: 'b', changedBy: side });
 }
 
 function handlePlayerReady(sessionId, ready) {
@@ -245,8 +203,6 @@ function handlePlayerReady(sessionId, ready) {
   if (!roomId) return;
   const room = rooms.get(roomId);
   if (!room || room.status !== 'lobby') return;
-
-  if (room.pendingChange) return; // Block readying while a change is pending
 
   const side = getPlayerSide(room, sessionId);
   if (!side) return;
@@ -929,7 +885,6 @@ module.exports = {
   createRoom,
   joinRoom,
   handleSettingChange,
-  handleSettingResponse,
   handlePlayerReady,
   makeMove,
   handleResign,
