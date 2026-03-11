@@ -514,6 +514,7 @@ function handleRematchResponse(sessionId, accept) {
     timeControl: room.timeControl,
     chess960: room.chess960,
     dbGameId: room.dbGameId,
+    videoEnabled: room.videoEnabled,
   };
 
   send(room.white.ws, 'rematch_start', { ...startPayload, color: 'w', opponentName: room.black.name });
