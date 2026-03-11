@@ -6,6 +6,7 @@ const {
   getDiagnosticsByRoom,
   getDiagnosticsBySession,
   getDiagnosticsRecent,
+  getDiagnosticsRecentGames,
 } = require('../db');
 const { renderDiagnosticsHTML } = require('./diagnostics-html');
 
@@ -41,6 +42,35 @@ router.post('/diagnostics', (req, res) => {
   }
 });
 
+// GET /api/chess/diagnostics — HTML dashboard (most recent game, or ?gameId=N for a specific game)
+router.get('/diagnostics', (req, res) => {
+  try {
+    const { category, limit = 500, offset = 0, gameId: gameIdParam } = req.query;
+    const queryOpts = {
+      category: category || null,
+      limit: Math.min(parseInt(limit, 10) || 500, 1000),
+      offset: parseInt(offset, 10) || 0,
+    };
+
+    let result;
+    if (gameIdParam) {
+      const gameId = parseInt(gameIdParam, 10);
+      if (isNaN(gameId)) return res.status(400).send('<p>Invalid game ID.</p>');
+      const events = getDiagnosticsByGame(gameId, queryOpts);
+      result = { gameId, events, count: events.length };
+    } else {
+      result = getDiagnosticsRecent(queryOpts);
+      if (result.gameId === null) return res.status(404).send('<p>No game diagnostics found.</p>');
+    }
+
+    const recentGames = getDiagnosticsRecentGames();
+    return res.send(renderDiagnosticsHTML(result, `Game ${result.gameId}`, recentGames));
+  } catch (e) {
+    console.error('GET /diagnostics error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/chess/diagnostics/game/:id — query diagnostics for a game
 router.get('/diagnostics/game/:id', (req, res) => {
   try {
@@ -55,7 +85,6 @@ router.get('/diagnostics/game/:id', (req, res) => {
     });
     const result = { gameId, events, count: events.length };
 
-    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Game ${gameId}`));
     res.json(result);
   } catch (e) {
     console.error('GET /diagnostics/game/:id error:', e.message);
@@ -75,7 +104,6 @@ router.get('/diagnostics/room/:code', (req, res) => {
     });
     const result = { roomCode, events, count: events.length };
 
-    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Room ${roomCode}`));
     res.json(result);
   } catch (e) {
     console.error('GET /diagnostics/room/:code error:', e.message);
@@ -95,7 +123,6 @@ router.get('/diagnostics/session/:id', (req, res) => {
     });
     const result = { sessionId, events, count: events.length };
 
-    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Session ${sessionId.slice(0, 8)}…`));
     res.json(result);
   } catch (e) {
     console.error('GET /diagnostics/session/:id error:', e.message);
@@ -114,7 +141,6 @@ router.get('/diagnostics/recent', (req, res) => {
     });
     if (result.gameId === null) return res.status(404).json({ error: 'No game diagnostics found' });
 
-    if (req.accepts('html')) return res.send(renderDiagnosticsHTML(result, `Recent game (ID ${result.gameId})`));
     res.json(result);
   } catch (e) {
     console.error('GET /diagnostics/recent error:', e.message);
