@@ -198,6 +198,25 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_diag_created_at ON diagnostic_events(created_at);
   `);
 
+  // --- Issue reports table ---
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS issue_reports (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      game_id         INTEGER REFERENCES games(id) ON DELETE SET NULL,
+      session_id      TEXT NOT NULL,
+      categories      TEXT NOT NULL DEFAULT '[]',
+      description     TEXT NOT NULL DEFAULT '',
+      auto_detected   INTEGER NOT NULL DEFAULT 0,
+      device_info     TEXT NOT NULL DEFAULT '{}',
+      created_at      INTEGER NOT NULL,
+      updated_at      INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_issue_reports_game_id ON issue_reports(game_id);
+    CREATE INDEX IF NOT EXISTS idx_issue_reports_session_id ON issue_reports(session_id);
+    CREATE INDEX IF NOT EXISTS idx_issue_reports_created_at ON issue_reports(created_at);
+  `);
+
   return db;
 }
 
@@ -792,6 +811,64 @@ function cleanupOldDiagnostics(maxAgeDays = 30) {
   }
 }
 
+// --- Issue report helpers ---
+
+function createIssueReport(gameId, sessionId, autoDetected, deviceInfo) {
+  const now = Date.now();
+  const stmt = db.prepare(`
+    INSERT INTO issue_reports (game_id, session_id, auto_detected, device_info, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const info = stmt.run(gameId || null, sessionId, autoDetected ? 1 : 0, JSON.stringify(deviceInfo || {}), now, now);
+  return { id: info.lastInsertRowid, gameId, sessionId, autoDetected, createdAt: now };
+}
+
+function updateIssueReport(id, fields) {
+  const sets = ['updated_at = ?'];
+  const values = [Date.now()];
+
+  if (fields.categories !== undefined) {
+    sets.push('categories = ?');
+    values.push(JSON.stringify(fields.categories));
+  }
+  if (fields.description !== undefined) {
+    sets.push('description = ?');
+    values.push(fields.description);
+  }
+
+  values.push(id);
+  db.prepare(`UPDATE issue_reports SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+}
+
+function getIssueReportByGame(gameId) {
+  const row = db.prepare('SELECT * FROM issue_reports WHERE game_id = ? ORDER BY created_at DESC LIMIT 1').get(gameId);
+  return row ? formatIssueReport(row) : null;
+}
+
+function getIssueReportsByGame(gameId) {
+  const rows = db.prepare('SELECT * FROM issue_reports WHERE game_id = ? ORDER BY created_at ASC').all(gameId);
+  return rows.map(formatIssueReport);
+}
+
+function getIssueReport(id) {
+  const row = db.prepare('SELECT * FROM issue_reports WHERE id = ?').get(id);
+  return row ? formatIssueReport(row) : null;
+}
+
+function formatIssueReport(row) {
+  return {
+    id: row.id,
+    gameId: row.game_id,
+    sessionId: row.session_id,
+    categories: JSON.parse(row.categories || '[]'),
+    description: row.description,
+    autoDetected: !!row.auto_detected,
+    deviceInfo: JSON.parse(row.device_info || '{}'),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function formatDiagnosticEvent(row) {
   return {
     id: row.id,
@@ -854,4 +931,10 @@ module.exports = {
   getDiagnosticsRecentGames,
   getGameSessionStates,
   cleanupOldDiagnostics,
+  // Issue report helpers
+  createIssueReport,
+  updateIssueReport,
+  getIssueReportByGame,
+  getIssueReportsByGame,
+  getIssueReport,
 };
