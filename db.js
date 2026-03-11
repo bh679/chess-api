@@ -845,6 +845,11 @@ function getIssueReportByGame(gameId) {
   return row ? formatIssueReport(row) : null;
 }
 
+function getIssueReportsByGame(gameId) {
+  const rows = db.prepare('SELECT * FROM issue_reports WHERE game_id = ? ORDER BY created_at ASC').all(gameId);
+  return rows.map(formatIssueReport);
+}
+
 function getIssueReport(id) {
   const row = db.prepare('SELECT * FROM issue_reports WHERE id = ?').get(id);
   return row ? formatIssueReport(row) : null;
@@ -930,5 +935,6 @@ module.exports = {
   createIssueReport,
   updateIssueReport,
   getIssueReportByGame,
+  getIssueReportsByGame,
   getIssueReport,
 };
