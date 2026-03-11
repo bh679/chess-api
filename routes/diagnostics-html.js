@@ -192,7 +192,7 @@ function renderGamesNav(recentGames, currentGameId) {
     if (isCurrent) {
       return `<span class="game-nav-item game-nav-current" title="Currently viewing">${escapeHtml(label)}</span>`;
     }
-    return `<a class="game-nav-item" href="/api/chess/diagnostics/game/${g.gameId}">${escapeHtml(label)}</a>`;
+    return `<a class="game-nav-item" href="/api/chess/diagnostics?gameId=${g.gameId}">${escapeHtml(label)}</a>`;
   }).join('');
 
   return `<div class="games-nav">
@@ -307,6 +307,7 @@ function renderDiagnosticsHTML(result, context, recentGames = []) {
     <div class="header-meta">${escapeHtml(ctxLabel)}</div>
   </div>
   <div class="header-actions">
+    ${result.gameId ? `<button class="btn" id="api-link-btn" onclick="copyApiLink()">⧉ Copy API link</button>` : ''}
     <button class="btn" onclick="location.reload()">↻ Refresh</button>
   </div>
 </div>
@@ -337,6 +338,18 @@ ${events.length > 0 ? `<div class="legend">${categoryLegend(events)}</div>` : ''
 
 <script>
 var _json = ${JSON.stringify(JSON.stringify(result))};
+var _gameId = ${result.gameId ? result.gameId : 'null'};
+function copyApiLink() {
+  var url = location.origin + '/api/chess/diagnostics/game/' + _gameId;
+  navigator.clipboard.writeText(url).then(function() {
+    var btn = document.getElementById('api-link-btn');
+    btn.textContent = '✓ Copied!';
+    setTimeout(function() { btn.textContent = '⧉ Copy API link'; }, 2000);
+  }).catch(function() {
+    var btn = document.getElementById('api-link-btn');
+    btn.textContent = 'Copy failed';
+  });
+}
 function copyJson() {
   navigator.clipboard.writeText(_json).then(function() {
     var btn = document.getElementById('copy-btn');
