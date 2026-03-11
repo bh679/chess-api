@@ -8,6 +8,7 @@ const {
   getDiagnosticsRecent,
   getDiagnosticsRecentGames,
   getGameSessionStates,
+  getGame,
 } = require('../db');
 const { renderDiagnosticsHTML } = require('./diagnostics-html');
 
@@ -70,7 +71,8 @@ router.get('/diagnostics', (req, res) => {
         ? { ...g, sessionStates: getGameSessionStates(g.gameId) }
         : g
     );
-    return res.send(renderDiagnosticsHTML(result, `Game ${result.gameId}`, recentGamesWithStates));
+    const game = result.gameId ? getGame(result.gameId) : null;
+    return res.send(renderDiagnosticsHTML(result, `Game ${result.gameId}`, recentGamesWithStates, game));
   } catch (e) {
     console.error('GET /diagnostics error:', e.message);
     res.status(500).json({ error: e.message });
