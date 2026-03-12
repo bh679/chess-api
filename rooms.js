@@ -79,7 +79,7 @@ function createRoom(ws, sessionId, name, timeControl, camMode, chess960) {
 
   const is960 = !!chess960;
   const startFen = is960 ? generateChess960FEN() : undefined;
-  const effectiveCamMode = ['none', 'king-cam', 'board-face', 'split-cam'].includes(camMode) ? camMode : 'none';
+  const effectiveCamMode = ['none', 'king-cam', 'board-face', 'split-cam', 'split-cam-h'].includes(camMode) ? camMode : 'none';
 
   const room = {
     id: roomId,
@@ -202,7 +202,7 @@ function handleSettingChange(sessionId, field, value) {
     room.white = { ...oldBlack };
     room.black = { ...oldWhite };
   } else if (field === 'camMode') {
-    const validCamModes = ['none', 'king-cam', 'board-face', 'split-cam'];
+    const validCamModes = ['none', 'king-cam', 'board-face', 'split-cam', 'split-cam-h'];
     if (validCamModes.includes(value)) {
       room.camMode = value;
       room.videoEnabled = value !== 'none';
