@@ -166,10 +166,13 @@ function handleSettingChange(sessionId, field, value) {
   const roomId = sessionRooms.get(sessionId);
   if (!roomId) return;
   const room = rooms.get(roomId);
-  if (!room || room.status !== 'lobby') return;
+  if (!room || (room.status !== 'lobby' && room.status !== 'waiting')) return;
 
   const validFields = ['timeControl', 'chess960', 'colorSwap', 'camMode'];
   if (!validFields.includes(field)) return;
+
+  // colorSwap requires two players
+  if (field === 'colorSwap' && room.status === 'waiting') return;
 
   const side = getPlayerSide(room, sessionId);
   if (!side) return;
@@ -204,6 +207,17 @@ function handleSettingChange(sessionId, field, value) {
       room.camMode = value;
       room.videoEnabled = value !== 'none';
     }
+  }
+
+  // While waiting: just acknowledge the change back to the creator
+  if (room.status === 'waiting') {
+    const updatedSettings = {
+      timeControl: room.timeControl,
+      chess960: room.chess960,
+      videoEnabled: room.videoEnabled,
+    };
+    send(room.white.ws, 'setting_changed', { field, settings: updatedSettings, ready: { w: false, b: false }, color: 'w', changedBy: 'w' });
+    return;
   }
 
   // Reset ready states on any change
