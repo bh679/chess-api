@@ -7,9 +7,11 @@ const {
   getDiagnosticsBySession,
   getDiagnosticsRecent,
   getDiagnosticsRecentGames,
+  getDiagnosticsLobbyOnlyRooms,
   getGameSessionStates,
   getGame,
   getIssueReportsByGame,
+  getIssueReportsByRoomCode,
 } = require('../db');
 const { renderDiagnosticsHTML } = require('./diagnostics-html');
 
@@ -45,10 +47,10 @@ router.post('/diagnostics', (req, res) => {
   }
 });
 
-// GET /api/chess/diagnostics — HTML dashboard (most recent game, or ?gameId=N for a specific game)
+// GET /api/chess/diagnostics — HTML dashboard (most recent game, ?gameId=N, or ?roomCode=X)
 router.get('/diagnostics', (req, res) => {
   try {
-    const { category, limit = 500, offset = 0, gameId: gameIdParam } = req.query;
+    const { category, limit = 500, offset = 0, gameId: gameIdParam, roomCode: roomCodeParam } = req.query;
     const queryOpts = {
       category: category || null,
       limit: Math.min(parseInt(limit, 10) || 500, 1000),
@@ -61,6 +63,10 @@ router.get('/diagnostics', (req, res) => {
       if (isNaN(gameId)) return res.status(400).send('<p>Invalid game ID.</p>');
       const events = getDiagnosticsByGame(gameId, queryOpts);
       result = { gameId, events, count: events.length };
+    } else if (roomCodeParam) {
+      const roomCode = roomCodeParam.toUpperCase();
+      const events = getDiagnosticsByRoom(roomCode, queryOpts);
+      result = { roomCode, gameId: null, events, count: events.length };
     } else {
       result = getDiagnosticsRecent(queryOpts);
       if (result.gameId === null) return res.status(404).send('<p>No game diagnostics found.</p>');
@@ -72,9 +78,15 @@ router.get('/diagnostics', (req, res) => {
         ? { ...g, sessionStates: getGameSessionStates(g.gameId) }
         : g
     );
+    const lobbyRooms = getDiagnosticsLobbyOnlyRooms();
+    const allNavEntries = [...recentGamesWithStates, ...lobbyRooms];
+
     const game = result.gameId ? getGame(result.gameId) : null;
-    const issueReports = result.gameId ? getIssueReportsByGame(result.gameId) : [];
-    return res.send(renderDiagnosticsHTML(result, `Game ${result.gameId}`, recentGamesWithStates, game, issueReports));
+    const issueReports = result.gameId
+      ? getIssueReportsByGame(result.gameId)
+      : (result.roomCode ? getIssueReportsByRoomCode(result.roomCode) : []);
+    const contextLabel = result.gameId ? `Game ${result.gameId}` : (result.roomCode ? `Room ${result.roomCode}` : 'Unknown');
+    return res.send(renderDiagnosticsHTML(result, contextLabel, allNavEntries, game, issueReports));
   } catch (e) {
     console.error('GET /diagnostics error:', e.message);
     res.status(500).json({ error: e.message });

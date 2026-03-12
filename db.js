@@ -772,6 +772,46 @@ function getDiagnosticsRecentGames({ limit = 20 } = {}) {
   }));
 }
 
+function getDiagnosticsLobbyOnlyRooms({ limit = 5 } = {}) {
+  return db.prepare(
+    `SELECT de.room_code, COUNT(de.id) as event_count,
+            MIN(de.timestamp) as first_ts, MAX(de.timestamp) as last_ts,
+            (SELECT COUNT(*) FROM issue_reports ir
+             WHERE ir.session_id IN (
+               SELECT DISTINCT session_id FROM diagnostic_events WHERE room_code = de.room_code
+             )) as issue_count
+     FROM diagnostic_events de
+     WHERE de.game_id IS NULL AND de.room_code IS NOT NULL
+     GROUP BY de.room_code
+     ORDER BY MAX(de.timestamp) DESC
+     LIMIT ?`
+  ).all(limit).map(r => ({
+    roomCode: r.room_code,
+    gameId: null,
+    eventCount: r.event_count,
+    firstTs: r.first_ts,
+    lastTs: r.last_ts,
+    result: null,
+    issueCount: r.issue_count || 0,
+  }));
+}
+
+function getIssueReportsByRoomCode(roomCode) {
+  const rows = db.prepare(
+    `SELECT ir.* FROM issue_reports ir
+     WHERE ir.session_id IN (
+       SELECT DISTINCT session_id FROM diagnostic_events WHERE room_code = ?
+     )
+     ORDER BY ir.created_at ASC`
+  ).all(roomCode);
+  return rows.map(r => ({
+    ...r,
+    categories: JSON.parse(r.categories || '[]'),
+    deviceInfo: JSON.parse(r.device_info || '{}'),
+    autoDetected: !!r.auto_detected,
+  }));
+}
+
 function getGameSessionStates(gameId) {
   // Get top-2 sessions by most recent activity for the game
   const sessions = db.prepare(
@@ -938,5 +978,7 @@ module.exports = {
   updateIssueReport,
   getIssueReportByGame,
   getIssueReportsByGame,
+  getIssueReportsByRoomCode,
+  getDiagnosticsLobbyOnlyRooms,
   getIssueReport,
 };
