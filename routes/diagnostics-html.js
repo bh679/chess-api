@@ -321,23 +321,31 @@ function renderConnectionDots(sessionStates) {
   }).join('');
 }
 
-function renderGamesNav(recentGames, currentGameId) {
+function renderGamesNav(recentGames, currentGameId, currentRoomCode) {
   if (!recentGames || recentGames.length === 0) return '';
 
   const items = recentGames.map(g => {
-    const isCurrent = g.gameId === currentGameId;
+    const isRoom = !g.gameId && g.roomCode;
+    const isCurrent = isRoom
+      ? g.roomCode === currentRoomCode
+      : g.gameId === currentGameId;
     const status = g.issueCount > 0 ? 'has_issues' : computePillStatus(g);
     const colors = PILL_COLORS[status];
-    const label = `#${g.gameId} · ${g.eventCount} event${g.eventCount !== 1 ? 's' : ''} · ${formatTs(g.lastTs)}`;
+    const label = isRoom
+      ? `Room ${g.roomCode} · ${g.eventCount} event${g.eventCount !== 1 ? 's' : ''} · ${formatTs(g.lastTs)}`
+      : `#${g.gameId} · ${g.eventCount} event${g.eventCount !== 1 ? 's' : ''} · ${formatTs(g.lastTs)}`;
 
     const dots = status === 'ongoing' ? renderConnectionDots(g.sessionStates) : '';
     const pillBg = isCurrent ? colors.activeBg : colors.bg;
     const inlineStyle = `background:${pillBg};border-color:${colors.border};color:${colors.text};`;
+    const href = isRoom
+      ? `/api/chess/diagnostics?roomCode=${encodeURIComponent(g.roomCode)}`
+      : `/api/chess/diagnostics?gameId=${g.gameId}`;
 
     if (isCurrent) {
       return `<span class="game-nav-item game-nav-current" style="${inlineStyle}" title="Currently viewing">${dots}${escapeHtml(label)}</span>`;
     }
-    return `<a class="game-nav-item" href="/api/chess/diagnostics?gameId=${g.gameId}" style="${inlineStyle}">${dots}${escapeHtml(label)}</a>`;
+    return `<a class="game-nav-item" href="${href}" style="${inlineStyle}">${dots}${escapeHtml(label)}</a>`;
   }).join('');
 
   const legend = `<div class="pill-legend">
@@ -517,7 +525,7 @@ function renderDiagnosticsHTML(result, context, recentGames = [], game = null, i
   ${issueReports.length > 0 ? `<div class="stat"><span class="stat-label">Issues</span><span class="stat-value" style="color:#f87171">⚑ ${issueReports.length} flagged</span></div>` : ''}
 </div>
 
-${renderGamesNav(recentGames, result.gameId)}
+${renderGamesNav(recentGames, result.gameId, result.roomCode)}
 
 ${events.length > 0 ? `<div class="filter-bar"><span class="filter-label">Show</span>${categoryFilterBar(events)}</div>` : ''}
 
