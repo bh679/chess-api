@@ -79,7 +79,7 @@ function createRoom(ws, sessionId, name, timeControl, camMode, chess960) {
 
   const is960 = !!chess960;
   const startFen = is960 ? generateChess960FEN() : undefined;
-  const effectiveCamMode = ['none', 'king-cam', 'board-face'].includes(camMode) ? camMode : 'none';
+  const effectiveCamMode = ['none', 'king-cam', 'board-face', 'split-cam'].includes(camMode) ? camMode : 'none';
 
   const room = {
     id: roomId,
@@ -151,7 +151,7 @@ function joinRoom(ws, sessionId, name, roomId) {
 
   const lobbyPayload = {
     roomId: room.id,
-    settings: { timeControl: room.timeControl, chess960: room.chess960, videoEnabled: room.videoEnabled },
+    settings: { timeControl: room.timeControl, chess960: room.chess960, camMode: room.camMode, videoEnabled: room.videoEnabled },
     white: { name: room.white.name, ready: false },
     black: { name: room.black.name, ready: false },
   };
@@ -168,7 +168,7 @@ function handleSettingChange(sessionId, field, value) {
   const room = rooms.get(roomId);
   if (!room || room.status !== 'lobby') return;
 
-  const validFields = ['timeControl', 'chess960', 'colorSwap'];
+  const validFields = ['timeControl', 'chess960', 'colorSwap', 'camMode'];
   if (!validFields.includes(field)) return;
 
   const side = getPlayerSide(room, sessionId);
@@ -198,6 +198,11 @@ function handleSettingChange(sessionId, field, value) {
     const oldBlack = room.black;
     room.white = { ...oldBlack };
     room.black = { ...oldWhite };
+  } else if (field === 'camMode') {
+    const validCamModes = ['none', 'king-cam', 'board-face', 'split-cam'];
+    const newMode = validCamModes.includes(value) ? value : 'none';
+    room.camMode = newMode;
+    room.videoEnabled = newMode !== 'none';
   }
 
   // Reset ready states on any change
@@ -206,6 +211,7 @@ function handleSettingChange(sessionId, field, value) {
   const updatedSettings = {
     timeControl: room.timeControl,
     chess960: room.chess960,
+    camMode: room.camMode,
     videoEnabled: room.videoEnabled,
   };
 
@@ -291,7 +297,7 @@ function attemptLobbyReconnect(ws, sessionId, room) {
 
   const lobbyPayload = {
     roomId: room.id,
-    settings: { timeControl: room.timeControl, chess960: room.chess960, videoEnabled: room.videoEnabled },
+    settings: { timeControl: room.timeControl, chess960: room.chess960, camMode: room.camMode, videoEnabled: room.videoEnabled },
     white: { name: room.white.name, ready: room.ready.w },
     black: { name: room.black.name, ready: room.ready.b },
   };
