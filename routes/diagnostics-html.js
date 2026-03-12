@@ -9,6 +9,7 @@ const PILL_COLORS = {
   abandoned:         { border: '#eab308', bg: '#422006', activeBg: '#713f12', text: '#fbbf24' },
   connection_failed: { border: '#ef4444', bg: '#450a0a', activeBg: '#7f1d1d', text: '#f87171' },
   ongoing:           { border: '#3b82f6', bg: '#0c2340', activeBg: '#1d4ed8', text: '#60a5fa' },
+  has_issues:        { border: '#ffffff', bg: '#2d2d2d', activeBg: '#3d3d3d', text: '#ffffff' },
 };
 
 function computePillStatus(game) {
@@ -325,7 +326,7 @@ function renderGamesNav(recentGames, currentGameId) {
 
   const items = recentGames.map(g => {
     const isCurrent = g.gameId === currentGameId;
-    const status = computePillStatus(g);
+    const status = g.issueCount > 0 ? 'has_issues' : computePillStatus(g);
     const colors = PILL_COLORS[status];
     const label = `#${g.gameId} · ${g.eventCount} event${g.eventCount !== 1 ? 's' : ''} · ${formatTs(g.lastTs)}`;
 
