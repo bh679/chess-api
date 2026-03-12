@@ -361,7 +361,7 @@ function renderDiagnosticsHTML(result, context, recentGames = [], game = null, i
   const lastTs  = events.length ? events[events.length - 1].timestamp : null;
   const timeRange = firstTs ? `${formatTs(firstTs)} → ${formatTs(lastTs)}` : 'No events';
   const sessions = groupBySession(events);
-  const resultWithIssues = { ...result, issueReports };
+  const resultWithIssues = { ...result, issueReports, game };
   const rawJson = escapeHtml(JSON.stringify(resultWithIssues, null, 2));
   const roomCodes = [...new Set(events.map(e => e.roomCode).filter(Boolean))].join(', ') || '—';
 
