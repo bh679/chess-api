@@ -106,6 +106,16 @@ function buildMeteredServers() {
   return [{ urls, username, credential }];
 }
 
+// Determine the TURN credential mode label for buildMeteredServers() output.
+// Returns 'metered' for static credentials, 'hmac' for HMAC/coturn, or null.
+function meteredProviderLabel() {
+  const { TURN_URLS, TURN_URL, TURN_USERNAME, TURN_PASSWORD, TURN_SECRET } = process.env;
+  if (!TURN_URLS && !TURN_URL) return null;
+  if (TURN_USERNAME && TURN_PASSWORD) return 'metered';
+  if (TURN_SECRET) return 'hmac';
+  return null;
+}
+
 // GET /api/chess/ice-servers — returns ICE server config for WebRTC
 router.get('/ice-servers', async (req, res) => {
   const cfKeyId = process.env.CLOUDFLARE_TURN_KEY_ID;
@@ -114,26 +124,36 @@ router.get('/ice-servers', async (req, res) => {
   if (cfKeyId && cfToken) {
     const cfServers = await fetchCloudflareIceServers(cfKeyId, cfToken);
     const meteredServers = buildMeteredServers();
+    const hasMetered = meteredServers.length > 0;
 
     if (cfServers) {
-      // Cloudflare primary + Metered fallback (WebRTC tries all in parallel)
-      return res.json([...STUN_SERVERS, ...cfServers, ...meteredServers]);
+      const turnProvider = hasMetered ? 'cloudflare+metered' : 'cloudflare';
+      return res.json({
+        iceServers: [...STUN_SERVERS, ...cfServers, ...meteredServers],
+        turnProvider,
+      });
     }
 
     // Cloudflare failed — fall back to Metered only
     console.warn('[ice-servers] Falling back to Metered-only due to Cloudflare API failure');
-    if (meteredServers.length > 0) {
-      return res.json([...STUN_SERVERS, ...meteredServers]);
+    if (hasMetered) {
+      return res.json({
+        iceServers: [...STUN_SERVERS, ...meteredServers],
+        turnProvider: meteredProviderLabel() || 'metered',
+      });
     }
-    return res.json(STUN_SERVERS);
+    return res.json({ iceServers: STUN_SERVERS, turnProvider: 'stun-only' });
   }
 
   // No Cloudflare config — use Metered/static/HMAC mode
   const meteredServers = buildMeteredServers();
   if (meteredServers.length === 0) {
-    return res.json(STUN_SERVERS);
+    return res.json({ iceServers: STUN_SERVERS, turnProvider: 'stun-only' });
   }
-  return res.json([...STUN_SERVERS, ...meteredServers]);
+  return res.json({
+    iceServers: [...STUN_SERVERS, ...meteredServers],
+    turnProvider: meteredProviderLabel() || 'metered',
+  });
 });
 
 module.exports = router;

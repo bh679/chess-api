@@ -112,6 +112,7 @@ function computeWebRtcSummary(events) {
 
   const summary = {
     hasTurn: false,
+    turnProvider: null,
     serverCount: 0,
     candidates: { host: 0, srflx: 0, relay: 0, prflx: 0, unknown: 0 },
     iceState: null,
@@ -124,6 +125,7 @@ function computeWebRtcSummary(events) {
     const d = e.data || {};
     if (e.eventType === 'ice_servers_config') {
       summary.hasTurn = !!d.hasTurn;
+      summary.turnProvider = d.turnProvider || null;
       summary.serverCount = d.count || 0;
     } else if (e.eventType === 'ice_candidate_local') {
       const t = d.type || 'unknown';
@@ -150,11 +152,12 @@ function renderWebRtcSummary(summary) {
   const iceOk = summary.iceState === 'connected' || summary.iceState === 'completed';
   const connOk = summary.connectionState === 'connected';
 
+  const providerSuffix = summary.turnProvider ? ` [${escapeHtml(summary.turnProvider)}]` : '';
   const turnLabel = summary.hasTurn
     ? (turnOk
-        ? `<span class="wrtc-ok">TURN ✓ (${relayCount} relay)</span>`
-        : `<span class="wrtc-warn">TURN ⚠ (0 relay)</span>`)
-    : `<span class="wrtc-off">TURN off</span>`;
+        ? `<span class="wrtc-ok">TURN${providerSuffix} ✓ (${relayCount} relay)</span>`
+        : `<span class="wrtc-warn">TURN${providerSuffix} ⚠ (0 relay)</span>`)
+    : `<span class="wrtc-off">TURN off${providerSuffix}</span>`;
 
   const iceLabel = summary.iceState
     ? (iceOk
