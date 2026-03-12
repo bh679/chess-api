@@ -753,7 +753,8 @@ function getDiagnosticsRecentGames({ limit = 20 } = {}) {
     `SELECT d.game_id, COUNT(d.id) as event_count,
             MIN(d.timestamp) as first_ts, MAX(d.timestamp) as last_ts,
             g.result, g.result_reason, g.end_time,
-            (SELECT COUNT(*) FROM moves m WHERE m.game_id = d.game_id) as move_count
+            (SELECT COUNT(*) FROM moves m WHERE m.game_id = d.game_id) as move_count,
+            (SELECT COUNT(*) FROM issue_reports ir WHERE ir.game_id = d.game_id) as issue_count
      FROM diagnostic_events d
      LEFT JOIN games g ON g.id = d.game_id
      WHERE d.game_id IS NOT NULL
@@ -767,6 +768,7 @@ function getDiagnosticsRecentGames({ limit = 20 } = {}) {
     resultReason: r.result_reason || null,
     endTime: r.end_time || null,
     moveCount: r.move_count || 0,
+    issueCount: r.issue_count || 0,
   }));
 }
 
