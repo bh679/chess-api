@@ -521,6 +521,14 @@ function handleRematchResponse(sessionId, accept) {
   send(room.black.ws, 'rematch_start', { ...startPayload, color: 'b', opponentName: room.white.name });
 }
 
+function getGracePeriod(room, side) {
+  if (room.clocks) {
+    const remaining = getCurrentClockTime(room, side);
+    return Math.max(remaining, 10_000);
+  }
+  return 10 * 60 * 1000;
+}
+
 function handleDisconnect(sessionId) {
   const roomId = sessionRooms.get(sessionId);
   if (!roomId) return;
@@ -567,9 +575,10 @@ function handleDisconnect(sessionId) {
   }
 
   // Notify opponent
+  const gracePeriod = getGracePeriod(room, side);
   const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
   if (opponent && opponent.ws) {
-    send(opponent.ws, 'opponent_disconnected', { timeout: DISCONNECT_GRACE_PERIOD / 1000 });
+    send(opponent.ws, 'opponent_disconnected', { timeout: Math.ceil(gracePeriod / 1000) });
   }
 
   // Start grace period
@@ -581,7 +590,7 @@ function handleDisconnect(sessionId) {
         const result = side === 'w' ? '0-1' : '1-0';
         finishGame(room, result, 'abandoned');
       }
-    }, DISCONNECT_GRACE_PERIOD);
+    }, gracePeriod);
   }
 }
 
