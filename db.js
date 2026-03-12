@@ -217,6 +217,13 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_issue_reports_created_at ON issue_reports(created_at);
   `);
 
+  // Migration: add room_code column if not present
+  const irCols = db.prepare("PRAGMA table_info(issue_reports)").all().map(c => c.name);
+  if (!irCols.includes('room_code')) {
+    db.exec(`ALTER TABLE issue_reports ADD COLUMN room_code TEXT`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_issue_reports_room_code ON issue_reports(room_code)`);
+  }
+
   return db;
 }
 
@@ -777,9 +784,7 @@ function getDiagnosticsLobbyOnlyRooms({ limit = 5 } = {}) {
     `SELECT de.room_code, COUNT(de.id) as event_count,
             MIN(de.timestamp) as first_ts, MAX(de.timestamp) as last_ts,
             (SELECT COUNT(*) FROM issue_reports ir
-             WHERE ir.session_id IN (
-               SELECT DISTINCT session_id FROM diagnostic_events WHERE room_code = de.room_code
-             )) as issue_count
+             WHERE ir.room_code = de.room_code) as issue_count
      FROM diagnostic_events de
      WHERE de.game_id IS NULL AND de.room_code IS NOT NULL
      GROUP BY de.room_code
@@ -799,9 +804,7 @@ function getDiagnosticsLobbyOnlyRooms({ limit = 5 } = {}) {
 function getIssueReportsByRoomCode(roomCode) {
   const rows = db.prepare(
     `SELECT ir.* FROM issue_reports ir
-     WHERE ir.session_id IN (
-       SELECT DISTINCT session_id FROM diagnostic_events WHERE room_code = ?
-     )
+     WHERE ir.room_code = ?
      ORDER BY ir.created_at ASC`
   ).all(roomCode);
   return rows.map(r => ({
@@ -855,13 +858,13 @@ function cleanupOldDiagnostics(maxAgeDays = 30) {
 
 // --- Issue report helpers ---
 
-function createIssueReport(gameId, sessionId, autoDetected, deviceInfo) {
+function createIssueReport(gameId, sessionId, roomCode, autoDetected, deviceInfo) {
   const now = Date.now();
   const stmt = db.prepare(`
-    INSERT INTO issue_reports (game_id, session_id, auto_detected, device_info, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO issue_reports (game_id, session_id, room_code, auto_detected, device_info, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
-  const info = stmt.run(gameId || null, sessionId, autoDetected ? 1 : 0, JSON.stringify(deviceInfo || {}), now, now);
+  const info = stmt.run(gameId || null, sessionId, roomCode || null, autoDetected ? 1 : 0, JSON.stringify(deviceInfo || {}), now, now);
   return { id: info.lastInsertRowid, gameId, sessionId, autoDetected, createdAt: now };
 }
 
