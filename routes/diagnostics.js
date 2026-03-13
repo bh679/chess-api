@@ -79,7 +79,8 @@ router.get('/diagnostics', (req, res) => {
         : g
     );
     const lobbyRooms = getDiagnosticsLobbyOnlyRooms();
-    const allNavEntries = [...recentGamesWithStates, ...lobbyRooms];
+    const allNavEntries = [...recentGamesWithStates, ...lobbyRooms]
+      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
 
     const game = result.gameId ? getGame(result.gameId) : null;
     const issueReports = result.gameId
