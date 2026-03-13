@@ -299,6 +299,9 @@ function attemptLobbyReconnect(ws, sessionId, room) {
     return null;
   }
 
+  // Log lobby reconnection for debugging mid-game reset issues
+  console.log(`[rooms] attemptLobbyReconnect: session=${sessionId.slice(0, 8)} room=${room.id} side=${side} status=${room.status} moves=${room.moves?.length || 0}`);
+
   const player = getPlayerBySide(room, side);
   player.ws = ws;
   player.connected = true;
