@@ -340,7 +340,9 @@ function renderGamesNav(recentGames, currentGameId, currentRoomCode) {
 
     const dots = status === 'ongoing' ? renderConnectionDots(g.sessionStates) : '';
     const pillBg = isCurrent ? colors.activeBg : colors.bg;
-    const inlineStyle = `background:${pillBg};border-color:${colors.border};color:${colors.text};`;
+    const isStale = (Date.now() - (g.lastTs || 0)) > 24 * 60 * 60 * 1000;
+    const opacityStyle = isStale ? 'opacity:0.5;' : '';
+    const inlineStyle = `background:${pillBg};border-color:${colors.border};color:${colors.text};${opacityStyle}`;
     const href = isRoom
       ? `/api/chess/diagnostics?roomCode=${encodeURIComponent(g.roomCode)}`
       : `/api/chess/diagnostics?gameId=${g.gameId}`;
