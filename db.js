@@ -797,13 +797,26 @@ function getDiagnosticsLobbyOnlyRooms({ limit = 5 } = {}) {
 }
 
 function getIssueReportsByRoomCode(roomCode) {
-  const rows = db.prepare(
-    `SELECT ir.* FROM issue_reports ir
-     WHERE ir.session_id IN (
-       SELECT DISTINCT session_id FROM diagnostic_events WHERE room_code = ?
-     )
-     ORDER BY ir.created_at ASC`
-  ).all(roomCode);
+  // Scope to the most recent game in this room to avoid issues from old games bleeding in
+  const latestGame = db.prepare(
+    'SELECT MAX(game_id) as game_id FROM diagnostic_events WHERE room_code = ? AND game_id IS NOT NULL'
+  ).get(roomCode);
+
+  let rows;
+  if (latestGame?.game_id) {
+    rows = db.prepare(
+      `SELECT ir.* FROM issue_reports ir
+       WHERE ir.room_code = ? AND ir.game_id = ?
+       ORDER BY ir.created_at ASC`
+    ).all(roomCode, latestGame.game_id);
+  } else {
+    rows = db.prepare(
+      `SELECT ir.* FROM issue_reports ir
+       WHERE ir.room_code = ? AND ir.game_id IS NULL
+       ORDER BY ir.created_at ASC`
+    ).all(roomCode);
+  }
+
   return rows.map(r => ({
     ...r,
     categories: JSON.parse(r.categories || '[]'),
