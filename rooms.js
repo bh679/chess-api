@@ -55,14 +55,14 @@ function parseTimeControl(tc) {
   const symMatch = tc.match(/^(\d+)\+(\d+)$/);
   if (symMatch) {
     const min = parseInt(symMatch[1], 10);
-    return { whiteMinutes: min, blackMinutes: min, increment: parseInt(symMatch[2], 10) };
+    return { creatorMinutes: min, opponentMinutes: min, increment: parseInt(symMatch[2], 10) };
   }
-  // Asymmetric/odds format: "10/5+3" (white 10 min, black 5 min, 3 sec increment)
+  // Asymmetric/odds format: "10/5+3" (creator 10 min, opponent 5 min, 3 sec increment)
   const oddsMatch = tc.match(/^(\d+)\/(\d+)\+(\d+)$/);
   if (oddsMatch) {
     return {
-      whiteMinutes: parseInt(oddsMatch[1], 10),
-      blackMinutes: parseInt(oddsMatch[2], 10),
+      creatorMinutes: parseInt(oddsMatch[1], 10),
+      opponentMinutes: parseInt(oddsMatch[2], 10),
       increment:    parseInt(oddsMatch[3], 10),
     };
   }
@@ -74,8 +74,8 @@ function createRoom(ws, sessionId, name, timeControl, camMode, chess960) {
   // "any" defaults to 5+0 for room creation
   const effectiveTc = timeControl === 'any' ? '5+0' : timeControl;
   const tc = parseTimeControl(effectiveTc);
-  const whiteMsBase = tc ? tc.whiteMinutes * 60 * 1000 : 0;
-  const blackMsBase = tc ? tc.blackMinutes * 60 * 1000 : 0;
+  const creatorMsBase = tc ? tc.creatorMinutes * 60 * 1000 : 0;
+  const opponentMsBase = tc ? tc.opponentMinutes * 60 * 1000 : 0;
 
   const is960 = !!chess960;
   const startFen = is960 ? generateChess960FEN() : undefined;
@@ -88,7 +88,7 @@ function createRoom(ws, sessionId, name, timeControl, camMode, chess960) {
     chess: startFen ? new Chess(startFen) : new Chess(),
     startingFen: startFen || null,
     timeControl: effectiveTc || 'none',
-    clocks: tc ? { w: whiteMsBase, b: blackMsBase, increment: tc.increment * 1000, lastMoveAt: null } : null,
+    clocks: tc ? { creator: creatorMsBase, opponent: opponentMsBase, increment: tc.increment * 1000, lastMoveAt: null } : null,
     moves: [],
     status: 'waiting',
     dbGameId: null,
@@ -157,8 +157,8 @@ function joinRoom(ws, sessionId, name, roomId) {
     black: { name: room.black.name, ready: false },
   };
 
-  send(room.white.ws, 'lobby_joined', { ...lobbyPayload, color: 'w', opponentName: room.black.name });
-  send(room.black.ws, 'lobby_joined', { ...lobbyPayload, color: 'b', opponentName: room.white.name });
+  send(room.white.ws, 'lobby_joined', { ...lobbyPayload, color: 'w', opponentName: room.black.name, isCreator: room.white.sessionId === room.creatorSessionId });
+  send(room.black.ws, 'lobby_joined', { ...lobbyPayload, color: 'b', opponentName: room.white.name, isCreator: room.black.sessionId === room.creatorSessionId });
 
   return room;
 }
@@ -183,7 +183,7 @@ function handleSettingChange(sessionId, field, value) {
     room.timeControl = value;
     const tc = parseTimeControl(value);
     if (tc) {
-      room.clocks = { w: tc.whiteMinutes * 60 * 1000, b: tc.blackMinutes * 60 * 1000, increment: tc.increment * 1000, lastMoveAt: null };
+      room.clocks = { creator: tc.creatorMinutes * 60 * 1000, opponent: tc.opponentMinutes * 60 * 1000, increment: tc.increment * 1000, lastMoveAt: null };
     } else {
       room.clocks = null;
     }
@@ -257,14 +257,15 @@ function handlePlayerReady(sessionId, ready) {
 function startGameFromLobby(room) {
   room.status = 'playing';
 
-  // For odds TC: if creator ended up as black, swap clocks and TC string so
-  // white/black values correctly reflect each player's actual starting time
-  const oddsMatch = room.timeControl.match(/^(\d+)\/(\d+)\+(\d+)$/);
-  if (oddsMatch && room.clocks && room.black.sessionId === room.creatorSessionId) {
-    const temp = room.clocks.w;
-    room.clocks.w = room.clocks.b;
-    room.clocks.b = temp;
-    room.timeControl = `${oddsMatch[2]}/${oddsMatch[1]}+${oddsMatch[3]}`;
+  // Map creator/opponent clock times to w/b based on which color the creator was assigned
+  if (room.clocks) {
+    const creatorIsWhite = room.white.sessionId === room.creatorSessionId;
+    room.clocks = {
+      w: creatorIsWhite ? room.clocks.creator : room.clocks.opponent,
+      b: creatorIsWhite ? room.clocks.opponent : room.clocks.creator,
+      increment: room.clocks.increment,
+      lastMoveAt: null,
+    };
   }
 
   // Create database game record
@@ -288,8 +289,8 @@ function startGameFromLobby(room) {
     dbGameId: room.dbGameId,
   };
 
-  send(room.white.ws, 'game_start', { ...startPayload, color: 'w', opponentName: room.black.name, camMode: room.camMode, videoEnabled: room.videoEnabled });
-  send(room.black.ws, 'game_start', { ...startPayload, color: 'b', opponentName: room.white.name, camMode: room.camMode, videoEnabled: room.videoEnabled });
+  send(room.white.ws, 'game_start', { ...startPayload, color: 'w', opponentName: room.black.name, camMode: room.camMode, videoEnabled: room.videoEnabled, isCreator: room.white.sessionId === room.creatorSessionId });
+  send(room.black.ws, 'game_start', { ...startPayload, color: 'b', opponentName: room.white.name, camMode: room.camMode, videoEnabled: room.videoEnabled, isCreator: room.black.sessionId === room.creatorSessionId });
 }
 
 function attemptLobbyReconnect(ws, sessionId, room) {
@@ -320,7 +321,7 @@ function attemptLobbyReconnect(ws, sessionId, room) {
     white: { name: room.white.name, ready: room.ready.w },
     black: { name: room.black.name, ready: room.ready.b },
   };
-  send(ws, 'lobby_joined', { ...lobbyPayload, color: side, opponentName: getPlayerBySide(room, side === 'w' ? 'b' : 'w').name });
+  send(ws, 'lobby_joined', { ...lobbyPayload, color: side, opponentName: getPlayerBySide(room, side === 'w' ? 'b' : 'w').name, isCreator: sessionId === room.creatorSessionId });
 
   const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
   if (opponent && opponent.ws) {
@@ -513,12 +514,13 @@ function handleRematchResponse(sessionId, accept) {
   room.status = 'playing';
   room.rematchOfferedBy = null;
 
-  // Reset clocks
+  // Reset clocks — map creator/opponent times to w/b based on current color assignment
   const tc = parseTimeControl(room.timeControl);
   if (tc) {
+    const creatorIsWhite = room.white.sessionId === room.creatorSessionId;
     room.clocks = {
-      w: tc.whiteMinutes * 60 * 1000,
-      b: tc.blackMinutes * 60 * 1000,
+      w: (creatorIsWhite ? tc.creatorMinutes : tc.opponentMinutes) * 60 * 1000,
+      b: (creatorIsWhite ? tc.opponentMinutes : tc.creatorMinutes) * 60 * 1000,
       increment: tc.increment * 1000,
       lastMoveAt: Date.now(),
     };
@@ -542,8 +544,8 @@ function handleRematchResponse(sessionId, accept) {
     videoEnabled: room.videoEnabled,
   };
 
-  send(room.white.ws, 'rematch_start', { ...startPayload, color: 'w', opponentName: room.black.name });
-  send(room.black.ws, 'rematch_start', { ...startPayload, color: 'b', opponentName: room.white.name });
+  send(room.white.ws, 'rematch_start', { ...startPayload, color: 'w', opponentName: room.black.name, isCreator: room.white.sessionId === room.creatorSessionId });
+  send(room.black.ws, 'rematch_start', { ...startPayload, color: 'b', opponentName: room.white.name, isCreator: room.black.sessionId === room.creatorSessionId });
 }
 
 function getGracePeriod(room, side) {
@@ -657,6 +659,7 @@ function attemptReconnect(ws, sessionId, room) {
     videoEnabled: room.videoEnabled,
     chess960: room.chess960,
     dbGameId: room.dbGameId,
+    isCreator: sessionId === room.creatorSessionId,
   });
 
   // Notify opponent
