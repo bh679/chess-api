@@ -10,7 +10,7 @@ const {
 // POST /api/chess/issues — create a new issue report (flag a game)
 router.post('/issues', (req, res) => {
   try {
-    const { gameId, sessionId, autoDetected, deviceInfo } = req.body;
+    const { gameId, sessionId, roomCode, autoDetected, deviceInfo } = req.body;
 
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
@@ -19,6 +19,7 @@ router.post('/issues', (req, res) => {
     const report = createIssueReport(
       gameId || null,
       sessionId,
+      roomCode || null,
       !!autoDetected,
       deviceInfo || {}
     );

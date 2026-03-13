@@ -98,6 +98,7 @@ function createRoom(ws, sessionId, name, timeControl, camMode, chess960) {
     videoEnabled: effectiveCamMode !== 'none', // backward compat
     chess960: is960,
     creatorSessionId: sessionId,
+    isPublic: false,
   };
 
   rooms.set(roomId, room);
@@ -943,6 +944,40 @@ function handleReviewExit(sessionId) {
   }
 }
 
+/**
+ * Toggle public visibility for a waiting room.
+ * Only the room creator can change this, and only while in 'waiting' status.
+ */
+function setPublicRoom(sessionId, isPublic) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return { error: 'Not in a room' };
+  const room = rooms.get(roomId);
+  if (!room || room.status !== 'waiting') return { error: 'Room is not in waiting state' };
+  if (room.creatorSessionId !== sessionId) return { error: 'Only the room creator can change visibility' };
+  room.isPublic = !!isPublic;
+  return { ok: true, isPublic: room.isPublic };
+}
+
+/**
+ * List all public waiting rooms (for lobby discovery).
+ * Excludes the requesting session's own rooms.
+ */
+function listPublicRooms(excludeSessionId) {
+  const result = [];
+  for (const room of rooms.values()) {
+    if (room.status !== 'waiting' || !room.isPublic) continue;
+    if (excludeSessionId && room.creatorSessionId === excludeSessionId) continue;
+    result.push({
+      roomId: room.id,
+      timeControl: room.timeControl,
+      chess960: room.chess960,
+      hostName: room.white.name,
+      createdAt: room.createdAt,
+    });
+  }
+  return result;
+}
+
 module.exports = {
   createRoom,
   joinRoom,
@@ -969,5 +1004,7 @@ module.exports = {
   getRoomCount,
   listRoomsForSession,
   cancelRoom,
+  setPublicRoom,
+  listPublicRooms,
   sessionRooms,
 };
