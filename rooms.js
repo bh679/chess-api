@@ -99,6 +99,7 @@ function createRoom(ws, sessionId, name, timeControl, camMode, chess960) {
     chess960: is960,
     creatorSessionId: sessionId,
     isPublic: false,
+    colorPreference: 'random', // 'white' | 'black' | 'random'
   };
 
   rooms.set(roomId, room);
@@ -137,14 +138,18 @@ function joinRoom(ws, sessionId, name, roomId) {
     return room;
   }
 
-  // Randomly assign colors — 50/50 chance creator gets white or black
+  // Assign colors based on creator's preference (or random if unset)
   const joiner = { ws, sessionId, name: name || 'Opponent', connected: true, videoReady: false };
   const creator = room.white;
-  if (Math.random() < 0.5) {
+  const creatorGetsWhite = room.colorPreference === 'white' ? true
+    : room.colorPreference === 'black' ? false
+    : Math.random() < 0.5;
+  if (creatorGetsWhite) {
+    room.black = joiner;
+    // room.white is already the creator
+  } else {
     room.white = joiner;
     room.black = creator;
-  } else {
-    room.black = joiner;
   }
   room.status = 'lobby';
   room.ready = { w: false, b: false };
@@ -169,7 +174,7 @@ function handleSettingChange(sessionId, field, value) {
   const room = rooms.get(roomId);
   if (!room || (room.status !== 'lobby' && room.status !== 'waiting')) return;
 
-  const validFields = ['timeControl', 'chess960', 'colorSwap', 'camMode'];
+  const validFields = ['timeControl', 'chess960', 'colorSwap', 'camMode', 'colorPreference'];
   if (!validFields.includes(field)) return;
 
   // colorSwap requires two players
@@ -208,6 +213,10 @@ function handleSettingChange(sessionId, field, value) {
       room.camMode = value;
       room.videoEnabled = value !== 'none';
     }
+  } else if (field === 'colorPreference') {
+    if (['white', 'black', 'random'].includes(value)) {
+      room.colorPreference = value;
+    }
   }
 
   // While waiting: just acknowledge the change back to the creator
@@ -216,6 +225,7 @@ function handleSettingChange(sessionId, field, value) {
       timeControl: room.timeControl,
       chess960: room.chess960,
       videoEnabled: room.videoEnabled,
+      colorPreference: room.colorPreference,
     };
     send(room.white.ws, 'setting_changed', { field, settings: updatedSettings, ready: { w: false, b: false }, color: 'w', changedBy: 'w' });
     return;
