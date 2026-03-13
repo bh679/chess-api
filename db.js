@@ -802,11 +802,46 @@ function getDiagnosticsLobbyOnlyRooms({ limit = 5 } = {}) {
 }
 
 function getIssueReportsByRoomCode(roomCode) {
-  const rows = db.prepare(
-    `SELECT ir.* FROM issue_reports ir
-     WHERE ir.room_code = ?
-     ORDER BY ir.created_at ASC`
-  ).all(roomCode);
+  // Scope to the most recent session in this room to avoid issues from old sessions bleeding in.
+  // For rooms with a game, filter by the latest game_id.
+  // For lobby-only rooms, use the most recent lobby_created timestamp as the session boundary.
+  const latestGame = db.prepare(
+    'SELECT MAX(game_id) as game_id FROM diagnostic_events WHERE room_code = ? AND game_id IS NOT NULL'
+  ).get(roomCode);
+
+  let rows;
+  if (latestGame?.game_id) {
+    rows = db.prepare(
+      `SELECT ir.* FROM issue_reports ir
+       WHERE ir.room_code = ? AND ir.game_id = ?
+       ORDER BY ir.created_at ASC`
+    ).all(roomCode, latestGame.game_id);
+  } else {
+    // Lobby-only room: find when the current session started (most recent lobby_created)
+    const sessionStart = db.prepare(
+      `SELECT MAX(timestamp) as ts FROM diagnostic_events
+       WHERE room_code = ? AND event_type = 'lobby_created'`
+    ).get(roomCode);
+
+    if (sessionStart?.ts) {
+      rows = db.prepare(
+        `SELECT ir.* FROM issue_reports ir
+         WHERE ir.room_code = ? AND ir.created_at >= ?
+         ORDER BY ir.created_at ASC`
+      ).all(roomCode, sessionStart.ts);
+    } else {
+      // No lobby_created event — fall back to most recent 24h window
+      const latestActivity = db.prepare(
+        'SELECT MAX(timestamp) as ts FROM diagnostic_events WHERE room_code = ?'
+      ).get(roomCode);
+      const windowStart = latestActivity?.ts ? latestActivity.ts - 24 * 60 * 60 * 1000 : 0;
+      rows = db.prepare(
+        `SELECT ir.* FROM issue_reports ir
+         WHERE ir.room_code = ? AND ir.created_at >= ?
+         ORDER BY ir.created_at ASC`
+      ).all(roomCode, windowStart);
+    }
+  }
   return rows.map(r => ({
     ...r,
     categories: JSON.parse(r.categories || '[]'),
