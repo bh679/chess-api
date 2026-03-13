@@ -126,6 +126,20 @@ function initWebSocket(server) {
           }
           break;
 
+        case 'set_public': {
+          const result = rooms.setPublicRoom(sessionId, !!payload?.isPublic);
+          if (result.error) {
+            send(ws, 'error', { message: result.error });
+          } else {
+            send(ws, 'public_set', { isPublic: result.isPublic });
+          }
+          break;
+        }
+
+        case 'list_public_rooms':
+          send(ws, 'public_rooms_list', { rooms: rooms.listPublicRooms(sessionId) });
+          break;
+
         // WebRTC video signaling — relay to opponent
         case 'rtc_offer':
         case 'rtc_answer':
