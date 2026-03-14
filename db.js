@@ -1,5 +1,6 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const { runMigrations } = require('./migrations');
 
 const DB_PATH = path.join(__dirname, 'data', 'chess.db');
 
@@ -42,36 +43,6 @@ function initDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_moves_game_id ON moves(game_id);
-  `);
-
-  // Migration: add engine columns for AI engine selection
-  try {
-    db.exec(`ALTER TABLE games ADD COLUMN white_engine TEXT`);
-  } catch (e) { /* column already exists */ }
-  try {
-    db.exec(`ALTER TABLE games ADD COLUMN black_engine TEXT`);
-  } catch (e) { /* column already exists */ }
-
-  // Migration: deduplicate existing moves and add unique constraint
-  // The UNIQUE constraint in CREATE TABLE only applies if the table is new.
-  // For existing tables, we need to create the index explicitly.
-  try {
-    // Remove duplicate moves keeping the one with the lowest rowid
-    db.exec(`
-      DELETE FROM moves WHERE id NOT IN (
-        SELECT MIN(id) FROM moves GROUP BY game_id, ply
-      )
-    `);
-    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_moves_game_ply ON moves(game_id, ply)`);
-  } catch (e) {
-    // Index may already exist; ignore
-  }
-
-  // Migration: normalize game results to chess notation
-  db.exec(`
-    UPDATE games SET result = '1-0' WHERE result = 'white';
-    UPDATE games SET result = '0-1' WHERE result = 'black';
-    UPDATE games SET result = '1/2-1/2' WHERE result = 'draw';
   `);
 
   // --- User accounts tables ---
@@ -145,37 +116,6 @@ function initDb() {
     );
   `);
 
-  // Migration: add user account columns to games table
-  try {
-    db.exec(`ALTER TABLE games ADD COLUMN white_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`);
-  } catch (e) { /* column already exists */ }
-  try {
-    db.exec(`ALTER TABLE games ADD COLUMN black_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`);
-  } catch (e) { /* column already exists */ }
-  try {
-    db.exec(`ALTER TABLE games ADD COLUMN white_rating_before REAL`);
-  } catch (e) { /* column already exists */ }
-  try {
-    db.exec(`ALTER TABLE games ADD COLUMN black_rating_before REAL`);
-  } catch (e) { /* column already exists */ }
-  try {
-    db.exec(`ALTER TABLE games ADD COLUMN white_rating_after REAL`);
-  } catch (e) { /* column already exists */ }
-  try {
-    db.exec(`ALTER TABLE games ADD COLUMN black_rating_after REAL`);
-  } catch (e) { /* column already exists */ }
-  try {
-    db.exec(`ALTER TABLE games ADD COLUMN rated INTEGER NOT NULL DEFAULT 0`);
-  } catch (e) { /* column already exists */ }
-
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_games_white_user ON games(white_user_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_games_black_user ON games(black_user_id)`);
-
-  // Migration: add password_hash for local auth
-  try {
-    db.exec(`ALTER TABLE users ADD COLUMN password_hash TEXT`);
-  } catch (e) { /* column already exists */ }
-
   // --- Diagnostics table ---
   db.exec(`
     CREATE TABLE IF NOT EXISTS diagnostic_events (
@@ -217,12 +157,7 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_issue_reports_created_at ON issue_reports(created_at);
   `);
 
-  // Migration: add room_code column if not present
-  const irCols = db.prepare("PRAGMA table_info(issue_reports)").all().map(c => c.name);
-  if (!irCols.includes('room_code')) {
-    db.exec(`ALTER TABLE issue_reports ADD COLUMN room_code TEXT`);
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_issue_reports_room_code ON issue_reports(room_code)`);
-  }
+  runMigrations(db);
 
   return db;
 }
