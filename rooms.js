@@ -987,6 +987,7 @@ function listPublicRooms(excludeSessionId) {
       roomId: room.id,
       timeControl: room.timeControl,
       chess960: room.chess960,
+      camMode: room.camMode,
       hostName: room.white.name,
       createdAt: room.createdAt,
     });
