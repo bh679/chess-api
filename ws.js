@@ -155,10 +155,17 @@ function initWebSocket(server) {
           rooms.relaySignaling(sessionId, 'video_ended', {});
           break;
 
-        // Player name change — relay to opponent
-        case 'name_change':
+        // Player name change — update room data, relay to opponent, broadcast if public
+        case 'name_change': {
+          const nameResult = rooms.updatePlayerName(sessionId, payload?.name);
           rooms.relaySignaling(sessionId, 'name_change', { name: payload?.name });
+          if (nameResult.isPublicWaiting) {
+            for (const [clientWs, clientSessionId] of connections) {
+              send(clientWs, 'public_rooms_list', { rooms: rooms.listPublicRooms(clientSessionId) });
+            }
+          }
           break;
+        }
 
         // Shared post-game review
         case 'review_enter':
