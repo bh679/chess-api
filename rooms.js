@@ -808,8 +808,22 @@ function cancelRoom(sessionId) {
   if (!roomId) return false;
 
   const room = rooms.get(roomId);
-  if (!room || room.status !== 'waiting') return false;
-  if (room.white.sessionId !== sessionId) return false;
+  if (!room) return false;
+
+  // Allow cancelling waiting rooms (by creator) and lobby rooms (by either player)
+  if (room.status === 'waiting') {
+    if (room.white.sessionId !== sessionId) return false;
+  } else if (room.status === 'lobby') {
+    const side = getPlayerSide(room, sessionId);
+    if (!side) return false;
+    // Notify the other player before cleanup
+    const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+    if (opponent && opponent.ws) {
+      send(opponent.ws, 'room_cancelled', {});
+    }
+  } else {
+    return false;
+  }
 
   cleanupRoom(roomId);
   return true;
