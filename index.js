@@ -54,13 +54,6 @@ app.use('/api/chess', iceServersRouter);
 app.use('/api/chess', diagnosticsRouter);
 app.use('/api/chess', issuesRouter);
 
-// Serve dashboard.html for /dashboard route
-if (process.env.CLIENT_DIR) {
-  app.get('/dashboard', (req, res) => {
-    res.sendFile(path.resolve(process.env.CLIENT_DIR, 'dashboard.html'));
-  });
-}
-
 // SPA catch-all: serve index.html for non-API, non-static paths
 // This allows path-based URLs (/replay, /games) to load the app,
 // which then redirects to the hash equivalent (/#/replay, /#/games)
