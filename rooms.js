@@ -838,6 +838,7 @@ function handleVideoReady(sessionId) {
   const side = getPlayerSide(room, sessionId);
   if (!side) return;
   const player = getPlayerBySide(room, side);
+  if (player.videoReady) return;
   player.videoReady = true;
   const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
   if (opponent && opponent.videoReady) {
