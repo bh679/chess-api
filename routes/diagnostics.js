@@ -14,7 +14,6 @@ const {
   getIssueReportsByGame,
   getIssueReportsByRoomCode,
 } = require('../db');
-const { renderDiagnosticsHTML } = require('./diagnostics-html');
 
 const MAX_BATCH_SIZE = 100;
 
@@ -52,7 +51,7 @@ router.post('/diagnostics', (req, res) => {
   }
 });
 
-// GET /api/chess/diagnostics — HTML dashboard (most recent game, ?gameId=N, or ?roomCode=X)
+// GET /api/chess/diagnostics — JSON (most recent game, ?gameId=N, or ?roomCode=X)
 router.get('/diagnostics', (req, res) => {
   try {
     const { category, limit = 500, offset = 0, gameId: gameIdParam, roomCode: roomCodeParam } = req.query;
@@ -65,7 +64,7 @@ router.get('/diagnostics', (req, res) => {
     let result;
     if (gameIdParam) {
       const gameId = parseInt(gameIdParam, 10);
-      if (isNaN(gameId)) return res.status(400).send('<p>Invalid game ID.</p>');
+      if (isNaN(gameId)) return res.status(400).json({ error: 'Invalid game ID' });
       const events = getDiagnosticsByGame(gameId, queryOpts);
       result = { gameId, events, count: events.length };
     } else if (roomCodeParam) {
@@ -74,9 +73,24 @@ router.get('/diagnostics', (req, res) => {
       result = { roomCode, gameId: null, events, count: events.length };
     } else {
       result = getDiagnosticsRecent(queryOpts);
-      if (result.gameId === null) return res.status(404).send('<p>No game diagnostics found.</p>');
+      if (result.gameId === null) return res.status(404).json({ error: 'No game diagnostics found' });
     }
 
+    const game = result.gameId ? getGame(result.gameId) : null;
+    const issueReports = result.gameId
+      ? getIssueReportsByGame(result.gameId)
+      : (result.roomCode ? getIssueReportsByRoomCode(result.roomCode) : []);
+
+    res.json({ ...result, game, issueReports });
+  } catch (e) {
+    console.error('GET /diagnostics error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/chess/diagnostics/nav — recent games list for dashboard navigation
+router.get('/diagnostics/nav', (req, res) => {
+  try {
     const recentGames = getDiagnosticsRecentGames();
     const recentGamesWithStates = recentGames.map(g =>
       g.result === null
@@ -84,17 +98,12 @@ router.get('/diagnostics', (req, res) => {
         : g
     );
     const lobbyRooms = getDiagnosticsLobbyOnlyRooms();
-    const allNavEntries = [...recentGamesWithStates, ...lobbyRooms]
+    const entries = [...recentGamesWithStates, ...lobbyRooms]
       .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
 
-    const game = result.gameId ? getGame(result.gameId) : null;
-    const issueReports = result.gameId
-      ? getIssueReportsByGame(result.gameId)
-      : (result.roomCode ? getIssueReportsByRoomCode(result.roomCode) : []);
-    const contextLabel = result.gameId ? `Game ${result.gameId}` : (result.roomCode ? `Room ${result.roomCode}` : 'Unknown');
-    return res.send(renderDiagnosticsHTML(result, contextLabel, allNavEntries, game, issueReports));
+    res.json({ entries });
   } catch (e) {
-    console.error('GET /diagnostics error:', e.message);
+    console.error('GET /diagnostics/nav error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -112,7 +121,8 @@ router.get('/diagnostics/game/:id', (req, res) => {
       offset: parseInt(offset, 10) || 0,
     });
     const issueReports = getIssueReportsByGame(gameId);
-    const result = { gameId, events, count: events.length, issueReports };
+    const game = getGame(gameId);
+    const result = { gameId, events, count: events.length, issueReports, game };
 
     res.json(result);
   } catch (e) {
@@ -131,7 +141,8 @@ router.get('/diagnostics/room/:code', (req, res) => {
       limit: Math.min(parseInt(limit, 10) || 500, 1000),
       offset: parseInt(offset, 10) || 0,
     });
-    const result = { roomCode, events, count: events.length };
+    const issueReports = getIssueReportsByRoomCode(roomCode);
+    const result = { roomCode, events, count: events.length, issueReports };
 
     res.json(result);
   } catch (e) {
@@ -171,7 +182,8 @@ router.get('/diagnostics/recent', (req, res) => {
     if (result.gameId === null) return res.status(404).json({ error: 'No game diagnostics found' });
 
     const issueReports = result.gameId ? getIssueReportsByGame(result.gameId) : [];
-    res.json({ ...result, issueReports });
+    const game = result.gameId ? getGame(result.gameId) : null;
+    res.json({ ...result, issueReports, game });
   } catch (e) {
     console.error('GET /diagnostics/recent error:', e.message);
     res.status(500).json({ error: e.message });
