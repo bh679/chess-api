@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { optionalAuth } = require('../middleware/auth');
+const { validateFEN, validateSAN, validateTimeControl, validatePagination } = require('../validation');
 
 // POST /api/games — Create a new game
 router.post('/games', optionalAuth, (req, res) => {
@@ -9,6 +10,12 @@ router.post('/games', optionalAuth, (req, res) => {
     const { gameType, timeControl, startingFen, white, black } = req.body;
     if (!startingFen || !white || !black) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+    const fenCheck = validateFEN(startingFen);
+    if (!fenCheck.valid) return res.status(400).json({ error: fenCheck.error });
+    if (timeControl !== undefined && timeControl !== null) {
+      const tcCheck = validateTimeControl(timeControl);
+      if (!tcCheck.valid) return res.status(400).json({ error: tcCheck.error });
     }
     // If logged in, set player name and link user to non-AI sides
     if (req.user) {
@@ -35,6 +42,10 @@ router.post('/games/:id/moves', (req, res) => {
     if (san === undefined || fen === undefined) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    const sanCheck = validateSAN(san);
+    if (!sanCheck.valid) return res.status(400).json({ error: sanCheck.error });
+    const fenCheck = validateFEN(fen);
+    if (!fenCheck.valid) return res.status(400).json({ error: fenCheck.error });
     const inserted = db.addMove(gameId, { ply, san, fen, timestamp, side });
     res.status(inserted ? 204 : 409).end();
   } catch (e) {
@@ -100,6 +111,8 @@ router.post('/games/list', (req, res) => {
     if (!Array.isArray(ids)) {
       return res.status(400).json({ error: 'ids must be an array' });
     }
+    const pageCheck = validatePagination(offset, limit);
+    if (!pageCheck.valid) return res.status(400).json({ error: pageCheck.error });
     // Sanitize: only allow positive integers
     const cleanIds = ids.filter(id => Number.isInteger(id) && id > 0);
     const result = db.listGames(cleanIds, limit, offset);
@@ -114,6 +127,8 @@ router.post('/games/list', (req, res) => {
 router.post('/games/list-all', (req, res) => {
   try {
     const { limit = 15, offset = 0 } = req.body || {};
+    const pageCheck = validatePagination(offset, limit);
+    if (!pageCheck.valid) return res.status(400).json({ error: pageCheck.error });
     const result = db.listAllGames(limit, offset);
     res.json(result);
   } catch (e) {

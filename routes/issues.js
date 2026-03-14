@@ -6,6 +6,7 @@ const {
   getIssueReportByGame,
   getIssueReport,
 } = require('../db');
+const { validateRoomCode } = require('../validation');
 
 // POST /api/chess/issues — create a new issue report (flag a game)
 router.post('/issues', (req, res) => {
@@ -14,6 +15,10 @@ router.post('/issues', (req, res) => {
 
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
+    }
+    if (roomCode) {
+      const rcCheck = validateRoomCode(roomCode);
+      if (!rcCheck.valid) return res.status(400).json({ error: rcCheck.error });
     }
 
     const report = createIssueReport(

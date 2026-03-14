@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { validateRoomCode } = require('../validation');
 const {
   insertDiagnosticEvents,
   getDiagnosticsByGame,
@@ -24,6 +25,10 @@ router.post('/diagnostics', (req, res) => {
 
     if (!sessionId || !Array.isArray(events) || events.length === 0) {
       return res.status(400).json({ error: 'sessionId and non-empty events array required' });
+    }
+    if (roomCode) {
+      const rcCheck = validateRoomCode(roomCode);
+      if (!rcCheck.valid) return res.status(400).json({ error: rcCheck.error });
     }
 
     const batch = events.slice(0, MAX_BATCH_SIZE);
