@@ -341,19 +341,12 @@ function attemptLobbyReconnect(ws, sessionId, room) {
   return room;
 }
 
-function makeMove(sessionId, san) {
-  const roomId = sessionRooms.get(sessionId);
-  if (!roomId) return { error: 'Not in a room' };
-
-  const room = rooms.get(roomId);
+// Returns { error } on failure, or { move, turn } on success (move already applied to room.chess)
+function validateMove(room, sessionId, san) {
   if (!room || room.status !== 'playing') return { error: 'Game not in progress' };
-
-  // Verify it's this player's turn
   const turn = room.chess.turn();
   const player = getPlayerBySide(room, turn);
   if (!player || player.sessionId !== sessionId) return { error: 'Not your turn' };
-
-  // Validate and apply move server-side
   let move;
   try {
     move = room.chess.move(san);
@@ -361,69 +354,76 @@ function makeMove(sessionId, san) {
     return { error: 'Invalid move' };
   }
   if (!move) return { error: 'Invalid move' };
+  return { move, turn };
+}
 
-  const now = Date.now();
-  const fen = room.chess.fen();
-
-  // Update clocks
-  if (room.clocks && room.moves.length > 0) {
+// Decrements the active clock, adds increment, updates lastMoveAt.
+// Returns { timedOut: true, result, reason } on timeout, else { timedOut: false }.
+function updateClock(room, turn, now) {
+  if (!room.clocks) return { timedOut: false };
+  if (room.moves.length > 0) {
     const elapsed = now - room.clocks.lastMoveAt;
     room.clocks[turn] -= elapsed;
     if (room.clocks[turn] <= 0) {
       room.clocks[turn] = 0;
-      // Time out — the player who just moved ran out (they used too long)
-      const loser = turn;
       const winner = turn === 'w' ? 'b' : 'w';
       const result = winner === 'w' ? '1-0' : '0-1';
-      finishGame(room, result, 'timeout');
-      return { ok: true };
+      return { timedOut: true, result, reason: 'timeout' };
     }
-    // Add increment
     room.clocks[turn] += room.clocks.increment;
   }
-  if (room.clocks) {
-    room.clocks.lastMoveAt = now;
+  room.clocks.lastMoveAt = now;
+  return { timedOut: false };
+}
+
+// Calls finishGame if the position is game-over. turn = side that just moved.
+function checkGameEnd(room, turn) {
+  if (!room.chess.isGameOver()) return;
+  let result, reason;
+  if (room.chess.isCheckmate()) {
+    result = turn === 'w' ? '1-0' : '0-1';
+    reason = 'checkmate';
+  } else if (room.chess.isDraw()) {
+    result = '1/2-1/2';
+    if (room.chess.isStalemate()) reason = 'stalemate';
+    else if (room.chess.isThreefoldRepetition()) reason = 'repetition';
+    else if (room.chess.isInsufficientMaterial()) reason = 'insufficient';
+    else reason = 'fifty-move';
+  }
+  finishGame(room, result, reason);
+}
+
+function makeMove(sessionId, san) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return { error: 'Not in a room' };
+
+  const room = rooms.get(roomId);
+  const validation = validateMove(room, sessionId, san);
+  if (validation.error) return { error: validation.error };
+  const { move, turn } = validation;
+
+  const now = Date.now();
+  const fen = room.chess.fen();
+
+  const clockUpdate = updateClock(room, turn, now);
+  if (clockUpdate.timedOut) {
+    finishGame(room, clockUpdate.result, clockUpdate.reason);
+    return { ok: true };
   }
 
   // Record move
   const moveRecord = { ply: room.moves.length, san: move.san, fen, timestamp: now, side: turn };
   room.moves.push(moveRecord);
+  if (room.dbGameId) addMove(room.dbGameId, moveRecord);
 
-  // Persist to database
-  if (room.dbGameId) {
-    addMove(room.dbGameId, moveRecord);
-  }
-
-  // Build clock payload
+  // Broadcast
   const clockPayload = room.clocks ? { w: room.clocks.w, b: room.clocks.b } : null;
-
-  // Broadcast move to opponent
   const opponent = getPlayerBySide(room, turn === 'w' ? 'b' : 'w');
-  if (opponent && opponent.ws) {
-    send(opponent.ws, 'move', { san: move.san, fen, clocks: clockPayload });
-  }
+  if (opponent && opponent.ws) send(opponent.ws, 'move', { san: move.san, fen, clocks: clockPayload });
+  const player = getPlayerBySide(room, turn);
+  if (player.ws && clockPayload) send(player.ws, 'move_ack', { clocks: clockPayload });
 
-  // Send clock confirmation to mover
-  if (player.ws && clockPayload) {
-    send(player.ws, 'move_ack', { clocks: clockPayload });
-  }
-
-  // Check for game end
-  if (room.chess.isGameOver()) {
-    let result, reason;
-    if (room.chess.isCheckmate()) {
-      result = turn === 'w' ? '1-0' : '0-1';
-      reason = 'checkmate';
-    } else if (room.chess.isDraw()) {
-      result = '1/2-1/2';
-      if (room.chess.isStalemate()) reason = 'stalemate';
-      else if (room.chess.isThreefoldRepetition()) reason = 'repetition';
-      else if (room.chess.isInsufficientMaterial()) reason = 'insufficient';
-      else reason = 'fifty-move';
-    }
-    finishGame(room, result, reason);
-  }
-
+  checkGameEnd(room, turn);
   return { ok: true };
 }
 
