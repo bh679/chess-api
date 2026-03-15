@@ -176,7 +176,18 @@ router.get('/turn-usage', async (req, res) => {
       return res.json({ available: false, error: `Metered API error: ${response.status}` });
     }
     const data = await response.json();
-    return res.json({ available: true, usageInGB: data.usageInGB, quotaInGB: data.quotaInGB, overageInGB: data.overageInGB });
+
+    // Calculate next reset date if METERED_BILLING_DAY is set (day of month, 1-28)
+    let nextResetDate = null;
+    const billingDay = parseInt(process.env.METERED_BILLING_DAY, 10);
+    if (billingDay >= 1 && billingDay <= 28) {
+      const now = new Date();
+      const thisMonth = new Date(now.getFullYear(), now.getMonth(), billingDay);
+      const nextReset = now.getDate() < billingDay ? thisMonth : new Date(now.getFullYear(), now.getMonth() + 1, billingDay);
+      nextResetDate = nextReset.toISOString().slice(0, 10); // YYYY-MM-DD
+    }
+
+    return res.json({ available: true, usageInGB: data.usageInGB, quotaInGB: data.quotaInGB, overageInGB: data.overageInGB, nextResetDate });
   } catch (err) {
     console.warn('[turn-usage] Fetch failed:', err.message);
     return res.json({ available: false, error: err.message });
