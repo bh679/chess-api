@@ -510,52 +510,73 @@ function handleRematchResponse(sessionId, accept) {
     return;
   }
 
-  // Swap colors and start new game
+  // Create a fresh room with same settings, swapped colors
   clearTimeout(room.cleanupTimer);
-  room.review = null; // Clear review state on rematch
   const oldWhite = room.white;
   const oldBlack = room.black;
 
-  room.white = { ws: oldBlack.ws, sessionId: oldBlack.sessionId, name: oldBlack.name, connected: oldBlack.connected };
-  room.black = { ws: oldWhite.ws, sessionId: oldWhite.sessionId, name: oldWhite.name, connected: oldWhite.connected };
-  const rematchFen = room.chess960 ? generateChess960FEN() : undefined;
-  room.chess = rematchFen ? new Chess(rematchFen) : new Chess();
-  room.moves = [];
-  room.status = 'playing';
-  room.rematchOfferedBy = null;
+  // Colors swap on rematch
+  const newWhite = { ws: oldBlack.ws, sessionId: oldBlack.sessionId, name: oldBlack.name, connected: oldBlack.connected, videoReady: false };
+  const newBlack = { ws: oldWhite.ws, sessionId: oldWhite.sessionId, name: oldWhite.name, connected: oldWhite.connected, videoReady: false };
 
-  // Reset clocks — map creator/opponent times to w/b based on current color assignment
+  const rematchFen = room.chess960 ? generateChess960FEN() : undefined;
   const tc = parseTimeControl(room.timeControl);
-  if (tc) {
-    const creatorIsWhite = room.white.sessionId === room.creatorSessionId;
-    room.clocks = {
+  const creatorIsWhite = newWhite.sessionId === room.creatorSessionId;
+
+  const newRoom = {
+    id: generateRoomCode(),
+    white: newWhite,
+    black: newBlack,
+    chess: rematchFen ? new Chess(rematchFen) : new Chess(),
+    startingFen: rematchFen || null,
+    timeControl: room.timeControl,
+    clocks: tc ? {
       w: (creatorIsWhite ? tc.creatorMinutes : tc.opponentMinutes) * 60 * 1000,
       b: (creatorIsWhite ? tc.opponentMinutes : tc.creatorMinutes) * 60 * 1000,
       increment: tc.increment * 1000,
       lastMoveAt: Date.now(),
-    };
-  }
+    } : null,
+    moves: [],
+    status: 'playing',
+    dbGameId: null,
+    createdAt: Date.now(),
+    cleanupTimer: null,
+    camMode: room.camMode,
+    videoEnabled: room.videoEnabled,
+    chess960: room.chess960,
+    creatorSessionId: room.creatorSessionId,
+    isPublic: false,
+    colorPreference: room.colorPreference,
+    rematchOfferedBy: null,
+    review: null,
+  };
+
+  // Register new room and clean up old one
+  rooms.set(newRoom.id, newRoom);
+  sessionRooms.set(newWhite.sessionId, newRoom.id);
+  sessionRooms.set(newBlack.sessionId, newRoom.id);
+  rooms.delete(room.id);
 
   // Create new DB game
-  room.dbGameId = createGame({
+  newRoom.dbGameId = createGame({
     gameType: 'multiplayer',
-    timeControl: room.timeControl,
-    startingFen: room.chess.fen(),
-    white: { name: room.white.name, isAI: false, elo: null, engineId: null },
-    black: { name: room.black.name, isAI: false, elo: null, engineId: null },
+    timeControl: newRoom.timeControl,
+    startingFen: newRoom.chess.fen(),
+    white: { name: newRoom.white.name, isAI: false, elo: null, engineId: null },
+    black: { name: newRoom.black.name, isAI: false, elo: null, engineId: null },
   });
 
   const startPayload = {
-    roomId: room.id,
-    fen: room.chess.fen(),
-    timeControl: room.timeControl,
-    chess960: room.chess960,
-    dbGameId: room.dbGameId,
-    videoEnabled: room.videoEnabled,
+    roomId: newRoom.id,
+    fen: newRoom.chess.fen(),
+    timeControl: newRoom.timeControl,
+    chess960: newRoom.chess960,
+    dbGameId: newRoom.dbGameId,
+    videoEnabled: newRoom.videoEnabled,
   };
 
-  send(room.white.ws, 'rematch_start', { ...startPayload, color: 'w', opponentName: room.black.name, isCreator: room.white.sessionId === room.creatorSessionId });
-  send(room.black.ws, 'rematch_start', { ...startPayload, color: 'b', opponentName: room.white.name, isCreator: room.black.sessionId === room.creatorSessionId });
+  send(newRoom.white.ws, 'rematch_start', { ...startPayload, color: 'w', opponentName: newRoom.black.name, isCreator: newRoom.white.sessionId === newRoom.creatorSessionId });
+  send(newRoom.black.ws, 'rematch_start', { ...startPayload, color: 'b', opponentName: newRoom.white.name, isCreator: newRoom.black.sessionId === newRoom.creatorSessionId });
 }
 
 function getGracePeriod(room, side) {
