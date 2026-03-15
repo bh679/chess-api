@@ -12,7 +12,7 @@ REST API server for persistent chess game storage. Stores games and moves in a S
 
 ## Version
 
-**Current:** `1.33.0000`
+**Current:** `1.41.0000`
 
 The `/api/health` endpoint returns the server version. The client checks this on startup to verify compatibility.
 
@@ -116,6 +116,8 @@ sudo /opt/bitnami/ctlscript.sh restart apache
 | GET | `/api/settings` | Get user settings (requires auth) |
 | PUT | `/api/settings` | Update user settings (requires auth) |
 | GET | `/api/game-history` | Get game history (with optional auth for user context) |
+| GET | `/api/ice-servers` | Get ICE server config for WebRTC |
+| GET | `/api/turn-usage` | Metered.ca TURN bandwidth usage (`{available, usageInGB, quotaInGB, overageInGB, nextResetDate}`) |
 
 ## WebSocket (Live Multiplayer)
 

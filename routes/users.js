@@ -1,6 +1,7 @@
 const express = require('express');
 const { getUserByUsername, updateUser, formatUser, getRatings, getRatingHistory, listGamesByUser } = require('../db');
 const { requireAuth, optionalAuth } = require('../middleware/auth');
+const { validatePagination } = require('../validation');
 
 const router = express.Router();
 
@@ -33,6 +34,8 @@ router.get('/users/:username/games', optionalAuth, (req, res) => {
   }
 
   const { limit, offset, category, result, opponent, gameType, playerType, timeControl, eloMin, eloMax } = req.query;
+  const pageCheck = validatePagination(offset, limit);
+  if (!pageCheck.valid) return res.status(400).json({ error: pageCheck.error });
   const data = listGamesByUser(user.id, {
     limit: parseInt(limit) || 15,
     offset: parseInt(offset) || 0,
@@ -75,6 +78,8 @@ router.get('/users/:username/rating-history', optionalAuth, (req, res) => {
   if (!category) {
     return res.status(400).json({ error: 'Category query parameter is required' });
   }
+  const pageCheck = validatePagination(undefined, limit);
+  if (!pageCheck.valid) return res.status(400).json({ error: pageCheck.error });
 
   const history = getRatingHistory(user.id, category, parseInt(limit) || 50, 0);
   res.json(history.map(h => ({

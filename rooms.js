@@ -267,6 +267,18 @@ function handlePlayerReady(sessionId, ready) {
 function startGameFromLobby(room) {
   room.status = 'playing';
 
+  // Reassign colors based on colorPreference at game start
+  const creatorIsCurrentlyWhite = room.white.sessionId === room.creatorSessionId;
+  const pref = room.colorPreference ?? 'random';
+  const creatorShouldBeWhite = pref === 'white' ? true
+    : pref === 'black' ? false
+    : Math.random() < 0.5;
+  if (creatorIsCurrentlyWhite !== creatorShouldBeWhite) {
+    const tmp = room.white;
+    room.white = room.black;
+    room.black = tmp;
+  }
+
   // Map creator/opponent clock times to w/b based on which color the creator was assigned
   if (room.clocks) {
     const creatorIsWhite = room.white.sessionId === room.creatorSessionId;
@@ -341,19 +353,12 @@ function attemptLobbyReconnect(ws, sessionId, room) {
   return room;
 }
 
-function makeMove(sessionId, san) {
-  const roomId = sessionRooms.get(sessionId);
-  if (!roomId) return { error: 'Not in a room' };
-
-  const room = rooms.get(roomId);
+// Returns { error } on failure, or { move, turn } on success (move already applied to room.chess)
+function validateMove(room, sessionId, san) {
   if (!room || room.status !== 'playing') return { error: 'Game not in progress' };
-
-  // Verify it's this player's turn
   const turn = room.chess.turn();
   const player = getPlayerBySide(room, turn);
   if (!player || player.sessionId !== sessionId) return { error: 'Not your turn' };
-
-  // Validate and apply move server-side
   let move;
   try {
     move = room.chess.move(san);
@@ -361,69 +366,76 @@ function makeMove(sessionId, san) {
     return { error: 'Invalid move' };
   }
   if (!move) return { error: 'Invalid move' };
+  return { move, turn };
+}
 
-  const now = Date.now();
-  const fen = room.chess.fen();
-
-  // Update clocks
-  if (room.clocks && room.moves.length > 0) {
+// Decrements the active clock, adds increment, updates lastMoveAt.
+// Returns { timedOut: true, result, reason } on timeout, else { timedOut: false }.
+function updateClock(room, turn, now) {
+  if (!room.clocks) return { timedOut: false };
+  if (room.moves.length > 0) {
     const elapsed = now - room.clocks.lastMoveAt;
     room.clocks[turn] -= elapsed;
     if (room.clocks[turn] <= 0) {
       room.clocks[turn] = 0;
-      // Time out — the player who just moved ran out (they used too long)
-      const loser = turn;
       const winner = turn === 'w' ? 'b' : 'w';
       const result = winner === 'w' ? '1-0' : '0-1';
-      finishGame(room, result, 'timeout');
-      return { ok: true };
+      return { timedOut: true, result, reason: 'timeout' };
     }
-    // Add increment
     room.clocks[turn] += room.clocks.increment;
   }
-  if (room.clocks) {
-    room.clocks.lastMoveAt = now;
+  room.clocks.lastMoveAt = now;
+  return { timedOut: false };
+}
+
+// Calls finishGame if the position is game-over. turn = side that just moved.
+function checkGameEnd(room, turn) {
+  if (!room.chess.isGameOver()) return;
+  let result, reason;
+  if (room.chess.isCheckmate()) {
+    result = turn === 'w' ? '1-0' : '0-1';
+    reason = 'checkmate';
+  } else if (room.chess.isDraw()) {
+    result = '1/2-1/2';
+    if (room.chess.isStalemate()) reason = 'stalemate';
+    else if (room.chess.isThreefoldRepetition()) reason = 'repetition';
+    else if (room.chess.isInsufficientMaterial()) reason = 'insufficient';
+    else reason = 'fifty-move';
+  }
+  finishGame(room, result, reason);
+}
+
+function makeMove(sessionId, san) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return { error: 'Not in a room' };
+
+  const room = rooms.get(roomId);
+  const validation = validateMove(room, sessionId, san);
+  if (validation.error) return { error: validation.error };
+  const { move, turn } = validation;
+
+  const now = Date.now();
+  const fen = room.chess.fen();
+
+  const clockUpdate = updateClock(room, turn, now);
+  if (clockUpdate.timedOut) {
+    finishGame(room, clockUpdate.result, clockUpdate.reason);
+    return { ok: true };
   }
 
   // Record move
   const moveRecord = { ply: room.moves.length, san: move.san, fen, timestamp: now, side: turn };
   room.moves.push(moveRecord);
+  if (room.dbGameId) addMove(room.dbGameId, moveRecord);
 
-  // Persist to database
-  if (room.dbGameId) {
-    addMove(room.dbGameId, moveRecord);
-  }
-
-  // Build clock payload
+  // Broadcast
   const clockPayload = room.clocks ? { w: room.clocks.w, b: room.clocks.b } : null;
-
-  // Broadcast move to opponent
   const opponent = getPlayerBySide(room, turn === 'w' ? 'b' : 'w');
-  if (opponent && opponent.ws) {
-    send(opponent.ws, 'move', { san: move.san, fen, clocks: clockPayload });
-  }
+  if (opponent && opponent.ws) send(opponent.ws, 'move', { san: move.san, fen, clocks: clockPayload });
+  const player = getPlayerBySide(room, turn);
+  if (player.ws && clockPayload) send(player.ws, 'move_ack', { clocks: clockPayload });
 
-  // Send clock confirmation to mover
-  if (player.ws && clockPayload) {
-    send(player.ws, 'move_ack', { clocks: clockPayload });
-  }
-
-  // Check for game end
-  if (room.chess.isGameOver()) {
-    let result, reason;
-    if (room.chess.isCheckmate()) {
-      result = turn === 'w' ? '1-0' : '0-1';
-      reason = 'checkmate';
-    } else if (room.chess.isDraw()) {
-      result = '1/2-1/2';
-      if (room.chess.isStalemate()) reason = 'stalemate';
-      else if (room.chess.isThreefoldRepetition()) reason = 'repetition';
-      else if (room.chess.isInsufficientMaterial()) reason = 'insufficient';
-      else reason = 'fifty-move';
-    }
-    finishGame(room, result, reason);
-  }
-
+  checkGameEnd(room, turn);
   return { ok: true };
 }
 
@@ -510,52 +522,73 @@ function handleRematchResponse(sessionId, accept) {
     return;
   }
 
-  // Swap colors and start new game
+  // Create a fresh room with same settings, swapped colors
   clearTimeout(room.cleanupTimer);
-  room.review = null; // Clear review state on rematch
   const oldWhite = room.white;
   const oldBlack = room.black;
 
-  room.white = { ws: oldBlack.ws, sessionId: oldBlack.sessionId, name: oldBlack.name, connected: oldBlack.connected };
-  room.black = { ws: oldWhite.ws, sessionId: oldWhite.sessionId, name: oldWhite.name, connected: oldWhite.connected };
-  const rematchFen = room.chess960 ? generateChess960FEN() : undefined;
-  room.chess = rematchFen ? new Chess(rematchFen) : new Chess();
-  room.moves = [];
-  room.status = 'playing';
-  room.rematchOfferedBy = null;
+  // Colors swap on rematch
+  const newWhite = { ws: oldBlack.ws, sessionId: oldBlack.sessionId, name: oldBlack.name, connected: oldBlack.connected, videoReady: false };
+  const newBlack = { ws: oldWhite.ws, sessionId: oldWhite.sessionId, name: oldWhite.name, connected: oldWhite.connected, videoReady: false };
 
-  // Reset clocks — map creator/opponent times to w/b based on current color assignment
+  const rematchFen = room.chess960 ? generateChess960FEN() : undefined;
   const tc = parseTimeControl(room.timeControl);
-  if (tc) {
-    const creatorIsWhite = room.white.sessionId === room.creatorSessionId;
-    room.clocks = {
+  const creatorIsWhite = newWhite.sessionId === room.creatorSessionId;
+
+  const newRoom = {
+    id: generateRoomCode(),
+    white: newWhite,
+    black: newBlack,
+    chess: rematchFen ? new Chess(rematchFen) : new Chess(),
+    startingFen: rematchFen || null,
+    timeControl: room.timeControl,
+    clocks: tc ? {
       w: (creatorIsWhite ? tc.creatorMinutes : tc.opponentMinutes) * 60 * 1000,
       b: (creatorIsWhite ? tc.opponentMinutes : tc.creatorMinutes) * 60 * 1000,
       increment: tc.increment * 1000,
       lastMoveAt: Date.now(),
-    };
-  }
+    } : null,
+    moves: [],
+    status: 'playing',
+    dbGameId: null,
+    createdAt: Date.now(),
+    cleanupTimer: null,
+    camMode: room.camMode,
+    videoEnabled: room.videoEnabled,
+    chess960: room.chess960,
+    creatorSessionId: room.creatorSessionId,
+    isPublic: false,
+    colorPreference: room.colorPreference,
+    rematchOfferedBy: null,
+    review: null,
+  };
+
+  // Register new room and clean up old one
+  rooms.set(newRoom.id, newRoom);
+  sessionRooms.set(newWhite.sessionId, newRoom.id);
+  sessionRooms.set(newBlack.sessionId, newRoom.id);
+  rooms.delete(room.id);
 
   // Create new DB game
-  room.dbGameId = createGame({
+  newRoom.dbGameId = createGame({
     gameType: 'multiplayer',
-    timeControl: room.timeControl,
-    startingFen: room.chess.fen(),
-    white: { name: room.white.name, isAI: false, elo: null, engineId: null },
-    black: { name: room.black.name, isAI: false, elo: null, engineId: null },
+    timeControl: newRoom.timeControl,
+    startingFen: newRoom.chess.fen(),
+    white: { name: newRoom.white.name, isAI: false, elo: null, engineId: null },
+    black: { name: newRoom.black.name, isAI: false, elo: null, engineId: null },
   });
 
   const startPayload = {
-    roomId: room.id,
-    fen: room.chess.fen(),
-    timeControl: room.timeControl,
-    chess960: room.chess960,
-    dbGameId: room.dbGameId,
-    videoEnabled: room.videoEnabled,
+    roomId: newRoom.id,
+    fen: newRoom.chess.fen(),
+    timeControl: newRoom.timeControl,
+    chess960: newRoom.chess960,
+    dbGameId: newRoom.dbGameId,
+    videoEnabled: newRoom.videoEnabled,
   };
 
-  send(room.white.ws, 'rematch_start', { ...startPayload, color: 'w', opponentName: room.black.name, isCreator: room.white.sessionId === room.creatorSessionId });
-  send(room.black.ws, 'rematch_start', { ...startPayload, color: 'b', opponentName: room.white.name, isCreator: room.black.sessionId === room.creatorSessionId });
+  send(newRoom.white.ws, 'rematch_start', { ...startPayload, color: 'w', opponentName: newRoom.black.name, isCreator: newRoom.white.sessionId === newRoom.creatorSessionId });
+  send(newRoom.black.ws, 'rematch_start', { ...startPayload, color: 'b', opponentName: newRoom.white.name, isCreator: newRoom.black.sessionId === newRoom.creatorSessionId });
 }
 
 function getGracePeriod(room, side) {
@@ -808,8 +841,22 @@ function cancelRoom(sessionId) {
   if (!roomId) return false;
 
   const room = rooms.get(roomId);
-  if (!room || room.status !== 'waiting') return false;
-  if (room.white.sessionId !== sessionId) return false;
+  if (!room) return false;
+
+  // Allow cancelling waiting rooms (by creator) and lobby rooms (by either player)
+  if (room.status === 'waiting') {
+    if (room.white.sessionId !== sessionId) return false;
+  } else if (room.status === 'lobby') {
+    const side = getPlayerSide(room, sessionId);
+    if (!side) return false;
+    // Notify the other player before cleanup
+    const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
+    if (opponent && opponent.ws) {
+      send(opponent.ws, 'room_cancelled', {});
+    }
+  } else {
+    return false;
+  }
 
   cleanupRoom(roomId);
   return true;
@@ -838,6 +885,7 @@ function handleVideoReady(sessionId) {
   const side = getPlayerSide(room, sessionId);
   if (!side) return;
   const player = getPlayerBySide(room, side);
+  if (player.videoReady) return;
   player.videoReady = true;
   const opponent = getPlayerBySide(room, side === 'w' ? 'b' : 'w');
   if (opponent && opponent.videoReady) {
@@ -1000,6 +1048,7 @@ function listPublicRooms(excludeSessionId) {
       roomId: room.id,
       timeControl: room.timeControl,
       chess960: room.chess960,
+      camMode: room.camMode,
       hostName: room.white.name,
       camMode: room.camMode,
       createdAt: room.createdAt,

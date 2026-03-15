@@ -1,12 +1,15 @@
 const express = require('express');
 const { listGamesByUser, claimGame, getGame, updatePlayerName } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { validatePagination } = require('../validation');
 
 const router = express.Router();
 
 // GET /api/my-games — authenticated user's game history
 router.get('/my-games', requireAuth, (req, res) => {
   const { limit, offset, category, result, opponent } = req.query;
+  const pageCheck = validatePagination(offset, limit);
+  if (!pageCheck.valid) return res.status(400).json({ error: pageCheck.error });
   const data = listGamesByUser(req.user.id, {
     limit: parseInt(limit) || 15,
     offset: parseInt(offset) || 0,

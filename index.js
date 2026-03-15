@@ -1,3 +1,4 @@
+try { process.loadEnvFile(require('path').join(__dirname, '.env')); } catch (_) {}
 const http = require('http');
 const express = require('express');
 const path = require('path');
