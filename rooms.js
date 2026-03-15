@@ -267,6 +267,18 @@ function handlePlayerReady(sessionId, ready) {
 function startGameFromLobby(room) {
   room.status = 'playing';
 
+  // Reassign colors based on colorPreference at game start
+  const creatorIsCurrentlyWhite = room.white.sessionId === room.creatorSessionId;
+  const pref = room.colorPreference ?? 'random';
+  const creatorShouldBeWhite = pref === 'white' ? true
+    : pref === 'black' ? false
+    : Math.random() < 0.5;
+  if (creatorIsCurrentlyWhite !== creatorShouldBeWhite) {
+    const tmp = room.white;
+    room.white = room.black;
+    room.black = tmp;
+  }
+
   // Map creator/opponent clock times to w/b based on which color the creator was assigned
   if (room.clocks) {
     const creatorIsWhite = room.white.sessionId === room.creatorSessionId;
