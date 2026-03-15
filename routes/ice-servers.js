@@ -156,4 +156,31 @@ router.get('/ice-servers', async (req, res) => {
   });
 });
 
+// GET /api/chess/turn-usage — returns Metered.ca TURN bandwidth usage for the current billing cycle.
+// Returns { available: false } if not configured or on API error (never errors the dashboard).
+router.get('/turn-usage', async (req, res) => {
+  const domain = process.env.METERED_DOMAIN;
+  const secretKey = process.env.METERED_SECRET_KEY;
+
+  if (!domain || !secretKey) {
+    return res.json({ available: false });
+  }
+
+  try {
+    // Domain may be a bare app name (e.g. "myapp") or a full hostname (e.g. "myapp.metered.live")
+    const host = domain.includes('.') ? domain : `${domain}.metered.live`;
+    const url = `https://${host}/api/v1/turn/current_usage?secretKey=${secretKey}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.warn(`[turn-usage] Metered API error: ${response.status} ${response.statusText}`);
+      return res.json({ available: false, error: `Metered API error: ${response.status}` });
+    }
+    const data = await response.json();
+    return res.json({ available: true, usageInGB: data.usageInGB, quotaInGB: data.quotaInGB, overageInGB: data.overageInGB });
+  } catch (err) {
+    console.warn('[turn-usage] Fetch failed:', err.message);
+    return res.json({ available: false, error: err.message });
+  }
+});
+
 module.exports = router;
