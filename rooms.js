@@ -1026,6 +1026,19 @@ function setPublicRoom(sessionId, isPublic) {
  * List all public waiting rooms (for lobby discovery).
  * Excludes the requesting session's own rooms.
  */
+function updatePlayerName(sessionId, name) {
+  const roomId = sessionRooms.get(sessionId);
+  if (!roomId) return { updated: false };
+  const room = rooms.get(roomId);
+  if (!room) return { updated: false };
+  const side = getPlayerSide(room, sessionId);
+  if (!side) return { updated: false };
+  const player = getPlayerBySide(room, side);
+  player.name = name || '';
+  const isPublicWaiting = room.isPublic && room.status === 'waiting';
+  return { updated: true, isPublicWaiting };
+}
+
 function listPublicRooms(excludeSessionId) {
   const result = [];
   for (const room of rooms.values()) {
@@ -1037,6 +1050,7 @@ function listPublicRooms(excludeSessionId) {
       chess960: room.chess960,
       camMode: room.camMode,
       hostName: room.white.name,
+      camMode: room.camMode,
       createdAt: room.createdAt,
     });
   }
@@ -1071,5 +1085,6 @@ module.exports = {
   cancelRoom,
   setPublicRoom,
   listPublicRooms,
+  updatePlayerName,
   sessionRooms,
 };
