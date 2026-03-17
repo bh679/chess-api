@@ -81,6 +81,27 @@ const MIGRATIONS = [
       }
     },
   },
+  {
+    name: 'add_bughouse_matches_table',
+    run(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS bughouse_matches (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          game_a_id      INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+          game_b_id      INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+          result         TEXT,
+          result_reason  TEXT,
+          winning_team   TEXT,
+          start_time     INTEGER NOT NULL,
+          end_time       INTEGER,
+          time_control   TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_bughouse_game_a ON bughouse_matches(game_a_id);
+        CREATE INDEX IF NOT EXISTS idx_bughouse_game_b ON bughouse_matches(game_b_id);
+      `);
+    },
+  },
 ];
 
 function runMigrations(db) {
