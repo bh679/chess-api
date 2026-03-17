@@ -118,6 +118,7 @@ function getSerializablePlayers(room) {
       board: p.board,
       color: p.color,
       connected: p.connected,
+      ready: p.ready || false,
     };
   }
   return result;
@@ -187,6 +188,15 @@ function createBughouseRoom(ws, sessionId, name, timeControl) {
     team: 'alpha',
     board: 'a',
     color: 'w',
+  });
+
+  // Send initial lobby state to the creator
+  send(ws, 'bug_lobby_update', {
+    roomId,
+    players: getSerializablePlayers(room),
+    settings: { timeControl: room.timeControl },
+    status: room.status,
+    you: { team: 'alpha', board: 'a', color: 'w' },
   });
 
   return room;
