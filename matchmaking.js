@@ -7,7 +7,7 @@ const DEFAULT_TC = '5+0';
 
 function joinQueue(ws, sessionId, name, timeControl, camMode, chess960) {
   const tc = timeControl || DEFAULT_TC;
-  const effectiveCamMode = ['none', 'king-cam', 'board-face', 'split-cam'].includes(camMode) ? camMode : 'none';
+  const effectiveCamMode = ['none', 'king-cam', 'board-face', 'tile-cam', 'split-cam', 'split-cam-h'].includes(camMode) ? camMode : 'none';
   const wantsVideo = effectiveCamMode !== 'none';
 
   // Check if already in a queue
