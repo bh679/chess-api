@@ -100,6 +100,8 @@ function createRoom(ws, sessionId, name, timeControl, camMode, chess960) {
     creatorSessionId: sessionId,
     isPublic: false,
     colorPreference: 'random', // 'white' | 'black' | 'random'
+    evalBar: false,
+    artStyle: 'none', // 'none' | 'classic' | 'staunton' | 'gothic' | 'chessmaster'
   };
 
   rooms.set(roomId, room);
@@ -157,7 +159,7 @@ function joinRoom(ws, sessionId, name, roomId) {
 
   const lobbyPayload = {
     roomId: room.id,
-    settings: { timeControl: room.timeControl, chess960: room.chess960, videoEnabled: room.videoEnabled, camMode: room.camMode },
+    settings: { timeControl: room.timeControl, chess960: room.chess960, videoEnabled: room.videoEnabled, camMode: room.camMode, evalBar: room.evalBar, artStyle: room.artStyle },
     white: { name: room.white.name, ready: false },
     black: { name: room.black.name, ready: false },
   };
@@ -174,7 +176,7 @@ function handleSettingChange(sessionId, field, value) {
   const room = rooms.get(roomId);
   if (!room || (room.status !== 'lobby' && room.status !== 'waiting')) return;
 
-  const validFields = ['timeControl', 'chess960', 'colorSwap', 'camMode', 'colorPreference'];
+  const validFields = ['timeControl', 'chess960', 'colorSwap', 'camMode', 'colorPreference', 'evalBar', 'artStyle'];
   if (!validFields.includes(field)) return;
 
   // colorSwap requires two players
@@ -217,6 +219,13 @@ function handleSettingChange(sessionId, field, value) {
     if (['white', 'black', 'random'].includes(value)) {
       room.colorPreference = value;
     }
+  } else if (field === 'evalBar') {
+    room.evalBar = !!value;
+  } else if (field === 'artStyle') {
+    const validStyles = ['none', 'classic', 'staunton', 'gothic', 'chessmaster'];
+    if (validStyles.includes(value)) {
+      room.artStyle = value;
+    }
   }
 
   // While waiting: just acknowledge the change back to the creator
@@ -226,6 +235,8 @@ function handleSettingChange(sessionId, field, value) {
       chess960: room.chess960,
       videoEnabled: room.videoEnabled,
       colorPreference: room.colorPreference,
+      evalBar: room.evalBar,
+      artStyle: room.artStyle,
     };
     send(room.white.ws, 'setting_changed', { field, settings: updatedSettings, ready: { w: false, b: false }, color: 'w', changedBy: 'w' });
     return;
@@ -239,6 +250,8 @@ function handleSettingChange(sessionId, field, value) {
     chess960: room.chess960,
     videoEnabled: room.videoEnabled,
     camMode: room.camMode,
+    evalBar: room.evalBar,
+    artStyle: room.artStyle,
   };
 
   send(room.white.ws, 'setting_changed', { field, settings: updatedSettings, ready: { w: false, b: false }, color: 'w', changedBy: side });
@@ -309,6 +322,8 @@ function startGameFromLobby(room) {
     timeControl: room.timeControl,
     chess960: room.chess960,
     dbGameId: room.dbGameId,
+    evalBar: room.evalBar,
+    artStyle: room.artStyle,
   };
 
   send(room.white.ws, 'game_start', { ...startPayload, color: 'w', opponentName: room.black.name, camMode: room.camMode, videoEnabled: room.videoEnabled, isCreator: room.white.sessionId === room.creatorSessionId });
@@ -339,7 +354,7 @@ function attemptLobbyReconnect(ws, sessionId, room) {
 
   const lobbyPayload = {
     roomId: room.id,
-    settings: { timeControl: room.timeControl, chess960: room.chess960, videoEnabled: room.videoEnabled, camMode: room.camMode },
+    settings: { timeControl: room.timeControl, chess960: room.chess960, videoEnabled: room.videoEnabled, camMode: room.camMode, evalBar: room.evalBar, artStyle: room.artStyle },
     white: { name: room.white.name, ready: room.ready.w },
     black: { name: room.black.name, ready: room.ready.b },
   };
@@ -559,6 +574,8 @@ function handleRematchResponse(sessionId, accept) {
     creatorSessionId: room.creatorSessionId,
     isPublic: false,
     colorPreference: room.colorPreference,
+    evalBar: room.evalBar,
+    artStyle: room.artStyle,
     rematchOfferedBy: null,
     review: null,
   };
@@ -585,6 +602,8 @@ function handleRematchResponse(sessionId, accept) {
     chess960: newRoom.chess960,
     dbGameId: newRoom.dbGameId,
     videoEnabled: newRoom.videoEnabled,
+    evalBar: newRoom.evalBar,
+    artStyle: newRoom.artStyle,
   };
 
   send(newRoom.white.ws, 'rematch_start', { ...startPayload, color: 'w', opponentName: newRoom.black.name, isCreator: newRoom.white.sessionId === newRoom.creatorSessionId });
@@ -703,6 +722,8 @@ function attemptReconnect(ws, sessionId, room) {
     chess960: room.chess960,
     dbGameId: room.dbGameId,
     isCreator: sessionId === room.creatorSessionId,
+    evalBar: room.evalBar,
+    artStyle: room.artStyle,
   });
 
   // Notify opponent
@@ -1050,7 +1071,8 @@ function listPublicRooms(excludeSessionId) {
       chess960: room.chess960,
       camMode: room.camMode,
       hostName: room.white.name,
-      camMode: room.camMode,
+      evalBar: room.evalBar,
+      artStyle: room.artStyle,
       createdAt: room.createdAt,
     });
   }
